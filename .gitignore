@@ -16,6 +16,8 @@ venv/
 # --- Backend runtime artifacts ---
 backend/job_files/
 job_files/
+backend/uploads/
+uploads/
 
 # --- Node / frontend ---
 node_modules/

@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -6,6 +8,43 @@
   color-scheme: light;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   @apply bg-slate-50 text-slate-900 antialiased;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* Tabular numerals for prices / CMP / data (docs/07 §1). */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Reusable surface + control primitives */
+@layer components {
+  .card {
+    @apply rounded-2xl bg-white shadow-card ring-1 ring-slate-200/70;
+  }
+  .input {
+    @apply w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900
+      placeholder:text-slate-400 outline-none transition
+      focus:border-brand focus:ring-4 focus:ring-brand/15;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-slate-700;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold
+      transition focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .btn-primary {
+    @apply btn bg-brand text-white hover:bg-brand-600 focus:ring-brand/25;
+  }
+  .btn-ghost {
+    @apply btn bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 focus:ring-slate-200;
+  }
 }

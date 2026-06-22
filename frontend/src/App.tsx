@@ -1,68 +1,51 @@
-import { Routes, Route } from "react-router-dom";
-import { motion } from "framer-motion";
-import { useQuery } from "@tanstack/react-query";
-import { Activity } from "lucide-react";
-
-interface Health {
-  status: string;
-  database: string;
-}
-
-function useHealth() {
-  return useQuery<Health>({
-    queryKey: ["health"],
-    queryFn: async () => {
-      const res = await fetch("/api/health");
-      if (!res.ok) throw new Error("health check failed");
-      return res.json();
-    },
-    retry: false,
-  });
-}
-
-function Shell() {
-  const { data, isLoading, isError } = useHealth();
-
-  const backend = isLoading
-    ? "checking…"
-    : isError
-      ? "unreachable"
-      : `${data?.status} (db: ${data?.database})`;
-
-  return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25 }}
-        className="w-full max-w-md rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-200"
-      >
-        <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand text-white">
-            <Activity size={20} />
-          </span>
-          <div>
-            <h1 className="text-lg font-semibold leading-tight">
-              Analyst Rationale Studio
-            </h1>
-            <p className="text-sm text-slate-500">App shell — Phase 0</p>
-          </div>
-        </div>
-
-        <div className="mt-6 rounded-lg bg-slate-50 px-4 py-3 text-sm">
-          <span className="text-slate-500">Backend: </span>
-          <span className="font-medium tabular-nums">{backend}</span>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
+import { useEffect } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { useAuthStore } from "./store/auth";
+import { RequireAdmin, RequireAuth } from "./app/guards";
+import AppShell from "./app/AppShell";
+import Toaster from "./components/Toaster";
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
+import Profile from "./pages/Profile";
+import Placeholder from "./pages/Placeholder";
 
 export default function App() {
+  const bootstrap = useAuthStore((s) => s.bootstrap);
+  useEffect(() => {
+    void bootstrap();
+  }, [bootstrap]);
+
   return (
-    <Routes>
-      <Route path="/" element={<Shell />} />
-      <Route path="*" element={<Shell />} />
-    </Routes>
+    <>
+      <Toaster />
+      <Routes>
+        <Route path="/login" element={<Login />} />
+
+        <Route
+          element={
+            <RequireAuth>
+              <AppShell />
+            </RequireAuth>
+          }
+        >
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/media-presence" element={<Placeholder title="Media Presence" phase="Phase 6" />} />
+          <Route path="/ai-rationale" element={<Placeholder title="AI Rationale" phase="Phase 7–8" />} />
+          <Route path="/generate-chart" element={<Placeholder title="Generate Chart" phase="Phase 10" />} />
+          <Route path="/saved" element={<Placeholder title="Saved Rationale" phase="Phase 9" />} />
+          <Route path="/profile" element={<Profile />} />
+
+          {/* Admin-only */}
+          <Route path="/admin/platforms" element={<RequireAdmin><Placeholder title="Manage Platform" phase="Phase 3" /></RequireAdmin>} />
+          <Route path="/admin/api-keys" element={<RequireAdmin><Placeholder title="Manage API Keys" phase="Phase 3" /></RequireAdmin>} />
+          <Route path="/admin/ai-models" element={<RequireAdmin><Placeholder title="Manage AI Models" phase="Phase 3" /></RequireAdmin>} />
+          <Route path="/admin/files" element={<RequireAdmin><Placeholder title="Upload Required Files" phase="Phase 3" /></RequireAdmin>} />
+          <Route path="/admin/pdf-template" element={<RequireAdmin><Placeholder title="PDF Template" phase="Phase 3" /></RequireAdmin>} />
+          <Route path="/admin/analysts" element={<RequireAdmin><Placeholder title="Analysts Profile" phase="Phase 3" /></RequireAdmin>} />
+        </Route>
+
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
   );
 }

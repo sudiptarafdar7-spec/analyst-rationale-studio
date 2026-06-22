@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     # --- Core infra (the only secrets that belong in env) ---
     DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/ars"
     JWT_SECRET: str = "change-me-in-env"
+    JWT_ALGORITHM: str = "HS256"
     APP_ENCRYPTION_KEY: str = ""  # Fernet key; required once api-key encryption lands
 
     # --- Auth lifetimes ---
@@ -31,6 +32,7 @@ class Settings(BaseSettings):
     # --- App wiring ---
     FRONTEND_ORIGIN: str = "http://localhost:5173"
     JOB_FILES_DIR: str = "job_files"
+    UPLOAD_DIR: str = "uploads"
 
     # --- Optional (worker) ---
     REDIS_URL: str = "redis://localhost:6379/0"

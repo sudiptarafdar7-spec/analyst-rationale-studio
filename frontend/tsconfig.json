@@ -22,4 +22,5 @@
       "@/*": ["src/*"]
     }
   },
-  "inc
+  "include": ["src", "vite.config.ts"]
+}
