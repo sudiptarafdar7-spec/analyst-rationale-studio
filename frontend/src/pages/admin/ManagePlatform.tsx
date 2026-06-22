@@ -47,6 +47,7 @@ interface FormState {
   url: string;
   logoFile: File | null;
   logoPreview: string | null;
+  fetchedLogoPath: string | null;
 }
 
 const EMPTY: FormState = {
@@ -55,6 +56,7 @@ const EMPTY: FormState = {
   url: "",
   logoFile: null,
   logoPreview: null,
+  fetchedLogoPath: null,
 };
 
 export default function ManagePlatform() {
@@ -84,6 +86,7 @@ export default function ManagePlatform() {
       url: p.url ?? "",
       logoFile: null,
       logoPreview: p.channel_logo_path,
+      fetchedLogoPath: p.channel_logo_path,
     });
     setOpen(true);
   };
@@ -95,6 +98,7 @@ export default function ManagePlatform() {
       fd.append("channel_name", form.channel_name);
       if (form.url) fd.append("url", form.url);
       if (form.logoFile) fd.append("logo", form.logoFile);
+      else if (form.fetchedLogoPath) fd.append("channel_logo_path", form.fetchedLogoPath);
       return form.id
         ? api.patchForm(`/platforms/${form.id}`, fd)
         : api.postForm("/platforms", fd);
@@ -124,7 +128,34 @@ export default function ManagePlatform() {
       toast.error("Logo must be 5 MB or smaller");
       return;
     }
-    setForm((s) => ({ ...s, logoFile: f, logoPreview: URL.createObjectURL(f) }));
+    setForm((s) => ({ ...s, logoFile: f, logoPreview: URL.createObjectURL(f), fetchedLogoPath: null }));
+  };
+
+  const [fetching, setFetching] = useState(false);
+  const fetchFromYoutube = async () => {
+    if (!form.url.trim()) {
+      toast.error("Enter the YouTube URL first");
+      return;
+    }
+    setFetching(true);
+    try {
+      const res = await api.get<{ channel_name: string; channel_logo_path: string | null; channel_url: string | null }>(
+        `/platforms/youtube/resolve?url=${encodeURIComponent(form.url.trim())}`,
+      );
+      setForm((s) => ({
+        ...s,
+        channel_name: res.channel_name || s.channel_name,
+        url: res.channel_url || s.url,
+        logoFile: null,
+        logoPreview: res.channel_logo_path ?? s.logoPreview,
+        fetchedLogoPath: res.channel_logo_path ?? s.fetchedLogoPath,
+      }));
+      toast.success("Fetched channel details from YouTube");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Could not fetch from YouTube");
+    } finally {
+      setFetching(false);
+    }
   };
 
   return (
@@ -256,13 +287,33 @@ export default function ManagePlatform() {
           </div>
 
           <div>
-            <label className="label">URL (optional)</label>
-            <input
-              className="input"
-              value={form.url}
-              onChange={(e) => setForm((s) => ({ ...s, url: e.target.value }))}
-              placeholder="https://…"
-            />
+            <label className="label">
+              URL {form.platform_type === "youtube" ? "(paste a channel or video link to auto-fill)" : "(optional)"}
+            </label>
+            <div className="flex gap-2">
+              <input
+                className="input"
+                value={form.url}
+                onChange={(e) => setForm((s) => ({ ...s, url: e.target.value }))}
+                placeholder="https://…"
+              />
+              {form.platform_type === "youtube" && (
+                <button
+                  type="button"
+                  className="btn-ghost whitespace-nowrap"
+                  disabled={fetching || !form.url.trim()}
+                  onClick={fetchFromYoutube}
+                >
+                  {fetching ? <Loader2 size={16} className="animate-spin" /> : <Youtube size={16} />}
+                  Fetch
+                </button>
+              )}
+            </div>
+            {form.platform_type === "youtube" && (
+              <p className="mt-1 text-xs text-slate-400">
+                Uses your YouTube API key. You can still edit the name and logo afterwards.
+              </p>
+            )}
           </div>
 
           <div>

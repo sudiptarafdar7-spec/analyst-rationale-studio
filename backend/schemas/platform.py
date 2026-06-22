@@ -19,3 +19,9 @@ class PlatformOut(BaseModel):
     channel_logo_path: str | None = None
     is_active: bool
     created_at: dt.datetime
+
+
+class YoutubeResolveOut(BaseModel):
+    channel_name: str
+    channel_logo_path: str | None = None
+    channel_url: str | None = None
