@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from api.ai_models import router as ai_models_router
 from api.analysts import router as analysts_router
 from api.api_keys import router as api_keys_router
 from api.auth import router as auth_router
@@ -36,6 +37,7 @@ app.include_router(platforms_router, prefix="/api")
 app.include_router(analysts_router, prefix="/api")
 app.include_router(files_router, prefix="/api")
 app.include_router(pdf_template_router, prefix="/api")
+app.include_router(ai_models_router, prefix="/api")
 
 # Serve uploaded files (avatars, logos, ...) from the upload dir.
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
