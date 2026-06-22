@@ -4,14 +4,17 @@ from __future__ import annotations
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import create_engine, pool
 
 from core.config import settings
 from db.base import Base
 from db import models  # noqa: F401  (populates Base.metadata)
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+
+# NOTE: do NOT push the URL through config.set_main_option — ConfigParser would
+# treat '%' (from percent-encoded passwords) as interpolation syntax. We read the
+# URL straight from settings instead.
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -32,12 +35,12 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    section = config.get_section(config.config_ini_section, {})
-    connectable = engine_from_config(section, prefix="sqlalchemy.", poolclass=pool.NullPool)
+    connectable = create_engine(settings.DATABASE_URL, poolclass=pool.NullPool, future=True)
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
         with context.begin_transaction():
             context.run_migrations()
+    connectable.dispose()
 
 
 if context.is_offline_mode():
