@@ -278,6 +278,69 @@ function TaskCard({ mapping, catalog }: { mapping: ModelMapping; catalog: Record
   );
 }
 
+/* ---- Cross-provider model picker (global / advanced fallback) ---- */
+function ModelPicker({
+  catalog,
+  value,
+  onChange,
+  allowEmpty = false,
+}: {
+  catalog: Record<string, ModelOption[]>;
+  value: string;
+  onChange: (v: string) => void;
+  allowEmpty?: boolean;
+}) {
+  const [customOpen, setCustomOpen] = useState(false);
+  const allValues = Object.values(catalog).flat().map((o) => o.value);
+  const isCustomVal = value !== "" && !allValues.includes(value);
+  const showCustom = customOpen || isCustomVal;
+  const selectValue = showCustom ? "__custom__" : value === "" ? "__none__" : value;
+  const PROVIDER_LABEL: Record<string, string> = { openai: "OpenAI", anthropic: "Anthropic", gemini: "Gemini" };
+
+  return (
+    <>
+      <select
+        className="input"
+        value={selectValue}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === "__custom__") {
+            setCustomOpen(true);
+            onChange("");
+          } else if (v === "__none__") {
+            setCustomOpen(false);
+            onChange("");
+          } else {
+            setCustomOpen(false);
+            onChange(v);
+          }
+        }}
+      >
+        {allowEmpty && <option value="__none__">None</option>}
+        {Object.entries(catalog).map(([prov, opts]) => (
+          <optgroup key={prov} label={PROVIDER_LABEL[prov] ?? prov}>
+            {opts.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+        <option value="__custom__">Custom…</option>
+      </select>
+      {showCustom && (
+        <input
+          className="input mt-2 font-mono text-sm"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Custom model id"
+          autoFocus
+        />
+      )}
+    </>
+  );
+}
+
 export default function ManageAiModels() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
@@ -331,11 +394,11 @@ export default function ManageAiModels() {
             <div className="mt-4 flex flex-wrap items-end gap-3">
               <div className="min-w-[14rem] flex-1">
                 <label className="label">Global model</label>
-                <input className="input font-mono text-sm" value={global_} onChange={(e) => setGlobal(e.target.value)} />
+                <ModelPicker catalog={data.catalog} value={global_} onChange={setGlobal} />
               </div>
               <div className="min-w-[14rem] flex-1">
                 <label className="label">Advanced model (optional)</label>
-                <input className="input font-mono text-sm" value={advanced} onChange={(e) => setAdvanced(e.target.value)} placeholder="e.g. gpt-4o" />
+                <ModelPicker catalog={data.catalog} value={advanced} onChange={setAdvanced} allowEmpty />
               </div>
               <button className="btn-primary" onClick={() => saveSettings.mutate()} disabled={!global_.trim() || saveSettings.isPending}>
                 {saveSettings.isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
