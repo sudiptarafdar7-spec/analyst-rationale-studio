@@ -48,3 +48,43 @@ body {
     @apply btn bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 focus:ring-slate-200;
   }
 }
+
+/* TipTap rich-text editor content */
+.rte {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: #334155;
+}
+.rte:focus {
+  outline: none;
+}
+.rte h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0.5rem 0 0.25rem;
+  color: #0f172a;
+}
+.rte p {
+  margin: 0.25rem 0;
+}
+.rte ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+.rte ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+.rte a {
+  color: #6c4cf1;
+  text-decoration: underline;
+}
+.rte strong {
+  font-weight: 700;
+}
+.rte:empty::before,
+.rte p.is-editor-empty:first-child::before {
+  content: "";
+}

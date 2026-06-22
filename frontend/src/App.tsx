@@ -12,6 +12,7 @@ import ManageApiKeys from "./pages/admin/ManageApiKeys";
 import ManagePlatform from "./pages/admin/ManagePlatform";
 import AnalystsProfile from "./pages/admin/AnalystsProfile";
 import UploadRequiredFiles from "./pages/admin/UploadRequiredFiles";
+import PdfTemplate from "./pages/admin/PdfTemplate";
 
 export default function App() {
   const bootstrap = useAuthStore((s) => s.bootstrap);
@@ -44,7 +45,7 @@ export default function App() {
           <Route path="/admin/api-keys" element={<RequireAdmin><ManageApiKeys /></RequireAdmin>} />
           <Route path="/admin/ai-models" element={<RequireAdmin><Placeholder title="Manage AI Models" phase="Phase 3f" /></RequireAdmin>} />
           <Route path="/admin/files" element={<RequireAdmin><UploadRequiredFiles /></RequireAdmin>} />
-          <Route path="/admin/pdf-template" element={<RequireAdmin><Placeholder title="PDF Template" phase="Phase 3e" /></RequireAdmin>} />
+          <Route path="/admin/pdf-template" element={<RequireAdmin><PdfTemplate /></RequireAdmin>} />
           <Route path="/admin/analysts" element={<RequireAdmin><AnalystsProfile /></RequireAdmin>} />
         </Route>
 
