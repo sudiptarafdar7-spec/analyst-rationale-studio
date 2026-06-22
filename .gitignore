@@ -1,0 +1,33 @@
+# --- Secrets / env ---
+.env
+*.env
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Backend runtime artifacts ---
+backend/job_files/
+job_files/
+
+# --- Node / frontend ---
+node_modules/
+frontend/dist/
+dist/
+.vite/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log

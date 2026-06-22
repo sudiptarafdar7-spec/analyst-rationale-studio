@@ -1,0 +1,9 @@
+Alembic migrations for Analyst Rationale Studio.
+
+Phase 0 wires the environment only; there are no revisions yet. Phase 1
+generates the initial migration matching docs/03_DATABASE_SCHEMA.md.
+
+Common commands (run from backend/):
+  alembic revision --autogenerate -m "message"
+  alembic upgrade head
+  alembic downgrade -1
