@@ -1,7 +1,8 @@
 """Idempotent database seed.
 
-Creates (or leaves intact) the baseline rows the app needs:
-  * one admin user (ADMIN_EMAIL / ADMIN_PASSWORD from env)
+Creates (or refreshes) the baseline rows the app needs:
+  * one admin user (ADMIN_EMAIL / ADMIN_PASSWORD from env) — re-running RESETS
+    the admin password to ADMIN_PASSWORD so dev login can't get stuck
   * the singleton model_settings row (global_model='gpt-4o')
   * default ai_models rows for the 4 selectable tasks -> openai / '__global__'
 
@@ -30,10 +31,13 @@ AI_TASKS = [AiTask.translate, AiTask.speaker_detect, AiTask.extract, AiTask.poli
 def seed_admin(db) -> str:
     existing = db.scalar(select(User).where(User.email == settings.ADMIN_EMAIL))
     if existing:
-        # Ensure the seeded account stays an active admin; don't clobber password.
+        # Keep the seeded account an active admin AND reset its password to the
+        # configured value, so a forgotten/old password can always be recovered
+        # by re-running the seed.
         existing.role = UserRole.admin
         existing.is_active = True
-        return f"admin exists: {existing.email}"
+        existing.password_hash = pwd_context.hash(settings.ADMIN_PASSWORD)
+        return f"admin reset: {existing.email} (password set from ADMIN_PASSWORD)"
 
     db.add(
         User(
@@ -75,15 +79,11 @@ def seed_ai_models(db) -> str:
 
 def main() -> None:
     with SessionLocal() as db:
-        messages = [
-            seed_admin(db),
-            seed_model_settings(db),
-            seed_ai_models(db),
-        ]
+        messages = [seed_admin(db), seed_model_settings(db), seed_ai_models(db)]
         db.commit()
     for m in messages:
         print(f"  - {m}")
-    print("seed complete.")
+    print(f"seed complete. Login: {settings.ADMIN_EMAIL} / (ADMIN_PASSWORD from .env)")
 
 
 if __name__ == "__main__":
