@@ -1,9 +1,4 @@
-"""Alembic migration environment.
-
-Pulls the database URL from the app settings (so there is a single source of
-truth) and targets `Base.metadata` for autogenerate. Model modules will be
-imported here in Phase 1 so autogenerate sees every table.
-"""
+"""Alembic migration environment."""
 from __future__ import annotations
 
 from logging.config import fileConfig
@@ -13,9 +8,7 @@ from sqlalchemy import engine_from_config, pool
 
 from core.config import settings
 from db.base import Base
-
-# Phase 1: import model modules so Base.metadata is populated, e.g.
-#   from db import models  # noqa: F401
+from db import models  # noqa: F401  (populates Base.metadata)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
@@ -40,17 +33,9 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     section = config.get_section(config.config_ini_section, {})
-    connectable = engine_from_config(
-        section,
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    connectable = engine_from_config(section, prefix="sqlalchemy.", poolclass=pool.NullPool)
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-        )
+        context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
         with context.begin_transaction():
             context.run_migrations()
 

@@ -1,0 +1,90 @@
+"""Idempotent database seed.
+
+Creates (or leaves intact) the baseline rows the app needs:
+  * one admin user (ADMIN_EMAIL / ADMIN_PASSWORD from env)
+  * the singleton model_settings row (global_model='gpt-4o')
+  * default ai_models rows for the 4 selectable tasks -> openai / '__global__'
+
+tool_configs are intentionally NOT seeded here — they are lazily created on
+first read from each tool's DEFAULT_CONFIG (docs/03 §14).
+
+Run from backend/:  python -m scripts.seed   (or `make seed`)
+Safe to run repeatedly.
+"""
+from __future__ import annotations
+
+from passlib.context import CryptContext
+from sqlalchemy import select
+
+from core.config import settings
+from db.enums import AiTask, ApiProvider, UserRole
+from db.models import AiModel, ModelSettings, User
+from db.session import SessionLocal
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+GLOBAL_MODEL_SENTINEL = "__global__"  # ai_router resolves this via model_settings
+AI_TASKS = [AiTask.translate, AiTask.speaker_detect, AiTask.extract, AiTask.polish]
+
+
+def seed_admin(db) -> str:
+    existing = db.scalar(select(User).where(User.email == settings.ADMIN_EMAIL))
+    if existing:
+        # Ensure the seeded account stays an active admin; don't clobber password.
+        existing.role = UserRole.admin
+        existing.is_active = True
+        return f"admin exists: {existing.email}"
+
+    db.add(
+        User(
+            email=settings.ADMIN_EMAIL,
+            password_hash=pwd_context.hash(settings.ADMIN_PASSWORD),
+            first_name=settings.ADMIN_FIRST_NAME,
+            last_name=settings.ADMIN_LAST_NAME,
+            role=UserRole.admin,
+            is_active=True,
+        )
+    )
+    return f"admin created: {settings.ADMIN_EMAIL}"
+
+
+def seed_model_settings(db) -> str:
+    row = db.get(ModelSettings, 1)
+    if row:
+        return "model_settings exists"
+    db.add(ModelSettings(id=1, global_model="gpt-4o"))
+    return "model_settings created (global_model='gpt-4o')"
+
+
+def seed_ai_models(db) -> str:
+    created = []
+    for task in AI_TASKS:
+        if db.scalar(select(AiModel).where(AiModel.task == task)):
+            continue
+        db.add(
+            AiModel(
+                task=task,
+                provider=ApiProvider.openai,
+                model_name=GLOBAL_MODEL_SENTINEL,
+                is_global_default=False,
+            )
+        )
+        created.append(task.value)
+    return f"ai_models created: {created or 'none (all present)'}"
+
+
+def main() -> None:
+    with SessionLocal() as db:
+        messages = [
+            seed_admin(db),
+            seed_model_settings(db),
+            seed_ai_models(db),
+        ]
+        db.commit()
+    for m in messages:
+        print(f"  - {m}")
+    print("seed complete.")
+
+
+if __name__ == "__main__":
+    main()

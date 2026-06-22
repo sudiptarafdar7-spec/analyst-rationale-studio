@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     # --- Optional (worker) ---
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # --- Seed admin (used only by scripts/seed.py) ---
+    ADMIN_EMAIL: str = "admin@example.com"
+    ADMIN_PASSWORD: str = "changeme"
+    ADMIN_FIRST_NAME: str = "Admin"
+    ADMIN_LAST_NAME: str = "User"
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.FRONTEND_ORIGIN.split(",") if o.strip()]
