@@ -1,8 +1,12 @@
 """Password hashing and JWT / refresh-token helpers.
 
+Password hashing uses the `bcrypt` library directly (passlib is unmaintained and
+breaks against bcrypt >= 4.1 on newer Pythons). bcrypt only considers the first
+72 bytes of a secret, so we truncate to that boundary explicitly.
+
 Access tokens are short-lived JWTs (Bearer). Refresh tokens are opaque random
-strings; only their SHA-256 hash is stored (refresh_tokens table) and the raw
-value lives in an httpOnly cookie.
+strings; only their SHA-256 hash is stored and the raw value lives in an
+httpOnly cookie.
 """
 from __future__ import annotations
 
@@ -11,23 +15,31 @@ import hashlib
 import secrets
 import uuid
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from core.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 REFRESH_COOKIE_NAME = "refresh_token"
+_BCRYPT_MAX_BYTES = 72
 
 
 # --- passwords -------------------------------------------------------------
+def _to_bcrypt_bytes(plain: str) -> bytes:
+    # bcrypt silently used to truncate at 72 bytes; modern bcrypt raises, so we
+    # truncate on a UTF-8 byte boundary ourselves.
+    return plain.encode("utf-8")[:_BCRYPT_MAX_BYTES]
+
+
 def hash_password(plain: str) -> str:
-    return pwd_context.hash(plain)
+    return bcrypt.hashpw(_to_bcrypt_bytes(plain), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    try:
+        return bcrypt.checkpw(_to_bcrypt_bytes(plain), hashed.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
 
 
 # --- access token (JWT) ----------------------------------------------------

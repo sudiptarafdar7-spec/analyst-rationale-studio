@@ -14,15 +14,13 @@ Safe to run repeatedly.
 """
 from __future__ import annotations
 
-from passlib.context import CryptContext
 from sqlalchemy import select
 
 from core.config import settings
+from core.security import hash_password
 from db.enums import AiTask, ApiProvider, UserRole
 from db.models import AiModel, ModelSettings, User
 from db.session import SessionLocal
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 GLOBAL_MODEL_SENTINEL = "__global__"  # ai_router resolves this via model_settings
 AI_TASKS = [AiTask.translate, AiTask.speaker_detect, AiTask.extract, AiTask.polish]
@@ -36,13 +34,13 @@ def seed_admin(db) -> str:
         # by re-running the seed.
         existing.role = UserRole.admin
         existing.is_active = True
-        existing.password_hash = pwd_context.hash(settings.ADMIN_PASSWORD)
+        existing.password_hash = hash_password(settings.ADMIN_PASSWORD)
         return f"admin reset: {existing.email} (password set from ADMIN_PASSWORD)"
 
     db.add(
         User(
             email=settings.ADMIN_EMAIL,
-            password_hash=pwd_context.hash(settings.ADMIN_PASSWORD),
+            password_hash=hash_password(settings.ADMIN_PASSWORD),
             first_name=settings.ADMIN_FIRST_NAME,
             last_name=settings.ADMIN_LAST_NAME,
             role=UserRole.admin,

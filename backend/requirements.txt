@@ -7,7 +7,7 @@ pydantic>=2
 pydantic-settings
 email-validator
 python-jose[cryptography]
-passlib[bcrypt]
+bcrypt
 cryptography
 python-multipart
 httpx
