@@ -20,6 +20,7 @@ from schemas.ai_models import (
 )
 from tools.config_registry import (
     AI_PROVIDERS,
+    MODEL_CATALOG,
     TASK_TOOL,
     TOOL_SCHEMAS,
     default_config,
@@ -61,6 +62,7 @@ def get_ai_models(db: Session = Depends(get_db), _admin: User = Depends(require_
     return AiModelsOut(
         models=models,
         settings=ModelSettingsOut(global_model=s.global_model, advanced_model=s.advanced_model),
+        catalog=MODEL_CATALOG,
     )
 
 

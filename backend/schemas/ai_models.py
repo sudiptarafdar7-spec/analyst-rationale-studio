@@ -20,9 +20,15 @@ class ModelSettingsOut(BaseModel):
     advanced_model: str | None = None
 
 
+class ModelOption(BaseModel):
+    value: str
+    label: str
+
+
 class AiModelsOut(BaseModel):
     models: list[AiModelMapping]
     settings: ModelSettingsOut
+    catalog: dict[str, list[ModelOption]]
 
 
 class AiModelUpdate(BaseModel):

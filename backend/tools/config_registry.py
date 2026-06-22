@@ -155,3 +155,33 @@ def get_effective_config(tool: str, db_config: dict | None = None, overrides: di
 
 def is_known_tool(tool: str) -> bool:
     return tool in TOOL_SCHEMAS
+
+
+# Curated, pre-loaded model options per provider (admin can still type a custom
+# value in the UI). Keep model *names* as the API model identifiers; labels are
+# friendly display names.
+MODEL_CATALOG: dict[str, list[dict]] = {
+    "openai": [
+        {"value": "gpt-4o", "label": "GPT-4o"},
+        {"value": "gpt-4o-mini", "label": "GPT-4o mini"},
+        {"value": "gpt-4.1", "label": "GPT-4.1"},
+        {"value": "gpt-4.1-mini", "label": "GPT-4.1 mini"},
+        {"value": "gpt-4-turbo", "label": "GPT-4 Turbo"},
+        {"value": "o3", "label": "o3 (reasoning)"},
+        {"value": "o4-mini", "label": "o4-mini (reasoning)"},
+    ],
+    "anthropic": [
+        {"value": "claude-opus-4-8", "label": "Claude Opus 4.8"},
+        {"value": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6"},
+        {"value": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5"},
+        {"value": "claude-3-7-sonnet-latest", "label": "Claude 3.7 Sonnet"},
+        {"value": "claude-3-5-haiku-latest", "label": "Claude 3.5 Haiku"},
+    ],
+    "gemini": [
+        {"value": "gemini-2.5-pro", "label": "Gemini 2.5 Pro"},
+        {"value": "gemini-2.5-flash", "label": "Gemini 2.5 Flash"},
+        {"value": "gemini-2.0-flash", "label": "Gemini 2.0 Flash"},
+        {"value": "gemini-1.5-pro", "label": "Gemini 1.5 Pro"},
+        {"value": "gemini-1.5-flash", "label": "Gemini 1.5 Flash"},
+    ],
+}

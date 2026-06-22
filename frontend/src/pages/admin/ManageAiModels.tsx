@@ -22,9 +22,14 @@ interface Settings {
   global_model: string;
   advanced_model: string | null;
 }
+interface ModelOption {
+  value: string;
+  label: string;
+}
 interface AiModelsResponse {
   models: ModelMapping[];
   settings: Settings;
+  catalog: Record<string, ModelOption[]>;
 }
 interface SchemaField {
   name: string;
@@ -157,15 +162,17 @@ function AdvancedConfig({ tool }: { tool: string }) {
 }
 
 /* ---- Per-task card ---- */
-function TaskCard({ mapping }: { mapping: ModelMapping }) {
+function TaskCard({ mapping, catalog }: { mapping: ModelMapping; catalog: Record<string, ModelOption[]> }) {
   const qc = useQueryClient();
   const [provider, setProvider] = useState<Provider>(mapping.provider);
   const [modelName, setModelName] = useState(mapping.model_name);
+  const [customOpen, setCustomOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     setProvider(mapping.provider);
     setModelName(mapping.model_name);
+    setCustomOpen(false);
   }, [mapping.provider, mapping.model_name]);
 
   const save = useMutation({
@@ -194,14 +201,49 @@ function TaskCard({ mapping }: { mapping: ModelMapping }) {
             ))}
           </select>
         </div>
-        <div className="min-w-[12rem] flex-1">
-          <label className="label">Model name</label>
-          <input
-            className="input font-mono text-sm"
-            value={modelName}
-            onChange={(e) => setModelName(e.target.value)}
-            placeholder="e.g. gpt-4o, claude-..., gemini-... or __global__"
-          />
+        <div className="min-w-[14rem] flex-1">
+          <label className="label">Model</label>
+          {(() => {
+            const opts = catalog[provider] ?? [];
+            const isCustomVal = modelName !== "__global__" && !opts.some((o) => o.value === modelName);
+            const showCustom = customOpen || isCustomVal;
+            const selectValue = showCustom ? "__custom__" : modelName;
+            return (
+              <>
+                <select
+                  className="input"
+                  value={selectValue}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "__custom__") {
+                      setCustomOpen(true);
+                      setModelName("");
+                    } else {
+                      setCustomOpen(false);
+                      setModelName(v);
+                    }
+                  }}
+                >
+                  <option value="__global__">Use global fallback</option>
+                  {opts.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                  <option value="__custom__">Custom…</option>
+                </select>
+                {showCustom && (
+                  <input
+                    className="input mt-2 font-mono text-sm"
+                    value={modelName}
+                    onChange={(e) => setModelName(e.target.value)}
+                    placeholder="Custom model id, e.g. gpt-4.1-2025-xx"
+                    autoFocus
+                  />
+                )}
+              </>
+            );
+          })()}
         </div>
         <button className="btn-primary" onClick={() => save.mutate()} disabled={!modelName.trim() || save.isPending}>
           {save.isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -305,7 +347,7 @@ export default function ManageAiModels() {
           {/* Per-task model + advanced config */}
           <div className="space-y-4">
             {data.models.map((m) => (
-              <TaskCard key={m.task} mapping={m} />
+              <TaskCard key={m.task} mapping={m} catalog={data.catalog} />
             ))}
           </div>
         </>
