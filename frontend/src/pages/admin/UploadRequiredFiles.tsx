@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
+  Download,
+  ExternalLink,
   FileSpreadsheet,
   FileType2,
   Image as ImageIcon,
@@ -72,9 +74,23 @@ function ActiveFileRow({ f, onDelete }: { f: UploadedFile; onDelete: (id: string
         )}
         <span className="text-xs text-slate-400">{prettySize(f.size_bytes)}</span>
       </div>
-      <button onClick={() => onDelete(f.id)} className="text-slate-400 transition hover:text-danger" title="Deactivate">
-        <Trash2 size={15} />
-      </button>
+      <div className="flex shrink-0 items-center gap-1">
+        <a
+          href={f.file_path}
+          download={f.file_name}
+          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white hover:text-brand"
+          title="Download"
+        >
+          <Download size={15} />
+        </a>
+        <button
+          onClick={() => onDelete(f.id)}
+          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white hover:text-danger"
+          title="Deactivate"
+        >
+          <Trash2 size={15} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -176,6 +192,14 @@ export default function UploadRequiredFiles() {
               className="hidden"
               onChange={(e) => e.target.files?.[0] && uploadMaster(e.target.files[0])}
             />
+            <a
+              href="https://images.dhan.co/api-data/api-scrip-master.csv"
+              target="_blank"
+              rel="noreferrer"
+              className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-brand hover:text-brand-700"
+            >
+              <ExternalLink size={15} /> Download the latest scrip master from Dhan
+            </a>
             <div className="flex items-center gap-3">
               <span className="grid h-11 w-11 place-items-center rounded-xl bg-emerald-50 text-emerald-600">
                 <FileSpreadsheet size={20} />
