@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from api.analysts import router as analysts_router
 from api.api_keys import router as api_keys_router
 from api.auth import router as auth_router
+from api.files import router as files_router
 from api.health import router as health_router
 from api.platforms import router as platforms_router
 from api.users import router as users_router
@@ -32,6 +33,7 @@ app.include_router(users_router, prefix="/api")
 app.include_router(api_keys_router, prefix="/api")
 app.include_router(platforms_router, prefix="/api")
 app.include_router(analysts_router, prefix="/api")
+app.include_router(files_router, prefix="/api")
 
 # Serve uploaded files (avatars, logos, ...) from the upload dir.
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)

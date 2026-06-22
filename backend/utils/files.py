@@ -62,3 +62,31 @@ def save_image_from_url(url: str, subdir: str, prefix: str = "") -> str:
     with open(os.path.join(dest_dir, name), "wb") as fh:
         fh.write(content)
     return f"/uploads/{subdir}/{name}"
+
+
+async def save_binary_upload(file: UploadFile, subdir: str, max_bytes: int, prefix: str = "") -> dict:
+    """Persist any uploaded file (CSV, font, ...). Returns metadata dict.
+
+    Returns: {file_path, file_name, size_bytes, mime_type, contents}
+    (contents included so callers can validate/parse without re-reading).
+    """
+    contents = await file.read()
+    if len(contents) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the {max_bytes // (1024 * 1024)} MB limit",
+        )
+    orig = os.path.basename(file.filename or "upload")
+    safe = "".join(ch for ch in orig if ch.isalnum() or ch in "._- ").strip() or "upload"
+    dest_dir = os.path.join(settings.UPLOAD_DIR, subdir)
+    os.makedirs(dest_dir, exist_ok=True)
+    stored = f"{prefix + '_' if prefix else ''}{uuid.uuid4().hex}_{safe}"
+    with open(os.path.join(dest_dir, stored), "wb") as fh:
+        fh.write(contents)
+    return {
+        "file_path": f"/uploads/{subdir}/{stored}",
+        "file_name": orig,
+        "size_bytes": len(contents),
+        "mime_type": file.content_type,
+        "contents": contents,
+    }
