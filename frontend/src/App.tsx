@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import Profile from "./pages/Profile";
 import Placeholder from "./pages/Placeholder";
 import ManageApiKeys from "./pages/admin/ManageApiKeys";
+import ManagePlatform from "./pages/admin/ManagePlatform";
 
 export default function App() {
   const bootstrap = useAuthStore((s) => s.bootstrap);
@@ -37,7 +38,7 @@ export default function App() {
           <Route path="/profile" element={<Profile />} />
 
           {/* Admin-only */}
-          <Route path="/admin/platforms" element={<RequireAdmin><Placeholder title="Manage Platform" phase="Phase 3b" /></RequireAdmin>} />
+          <Route path="/admin/platforms" element={<RequireAdmin><ManagePlatform /></RequireAdmin>} />
           <Route path="/admin/api-keys" element={<RequireAdmin><ManageApiKeys /></RequireAdmin>} />
           <Route path="/admin/ai-models" element={<RequireAdmin><Placeholder title="Manage AI Models" phase="Phase 3f" /></RequireAdmin>} />
           <Route path="/admin/files" element={<RequireAdmin><Placeholder title="Upload Required Files" phase="Phase 3d" /></RequireAdmin>} />
