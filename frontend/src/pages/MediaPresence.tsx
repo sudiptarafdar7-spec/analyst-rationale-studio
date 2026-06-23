@@ -7,18 +7,17 @@ import {
   CloudUpload,
   Facebook,
   FileDown,
+  Filter,
   Globe,
   Instagram,
   Loader2,
   MessageCircle,
-  MoreVertical,
   Pencil,
   Play,
   Plus,
   Radio,
   RotateCcw,
   Send,
-  Sparkles,
   Trash2,
   Users,
   X,
@@ -85,6 +84,48 @@ const STATUS_META: Record<JobStatus, { label: string; cls: string; pulse?: boole
   failed: { label: "Failed", cls: "bg-red-100 text-red-700" },
   saved: { label: "Saved", cls: "bg-violet-100 text-violet-700" },
 };
+
+const ROW_BG: Record<JobStatus, string> = {
+  pending: "bg-white",
+  running: "bg-slate-50",
+  paused_review: "bg-amber-50/50",
+  completed: "bg-emerald-50/50",
+  failed: "bg-red-50/40",
+  saved: "bg-violet-50/40",
+};
+
+interface Filters {
+  from: string; to: string; platformType: string; channelId: string; status: string; analystId: string;
+}
+const EMPTY_FILTERS: Filters = { from: "", to: "", platformType: "", channelId: "", status: "", analystId: "" };
+const FILTER_KEY = "mp_filters";
+const FILTER_HIST_KEY = "mp_filter_history";
+function loadJSON<T>(key: string, fallback: T): T {
+  try { const v = localStorage.getItem(key); return v ? (JSON.parse(v) as T) : fallback; } catch { return fallback; }
+}
+function isEmptyFilter(f: Filters): boolean {
+  return !f.from && !f.to && !f.platformType && !f.channelId && !f.status && !f.analystId;
+}
+function summarizeFilter(f: Filters, plats: Platform[], ans: Analyst[]): string {
+  const parts: string[] = [];
+  if (f.from || f.to) parts.push(`${f.from || "\u2026"}\u2192${f.to || "\u2026"}`);
+  if (f.platformType) parts.push(f.platformType);
+  if (f.channelId) parts.push(plats.find((p) => p.id === f.channelId)?.channel_name ?? "channel");
+  if (f.status) parts.push(STATUS_META[f.status as JobStatus]?.label ?? f.status);
+  if (f.analystId) parts.push(ans.find((a) => a.id === f.analystId)?.name ?? "analyst");
+  return parts.join(" \u00b7 ") || "Filter";
+}
+async function downloadJobPdf(job: Job): Promise<void> {
+  try {
+    const blob = await api.getBlob(`/jobs/${job.id}/pdf`);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(job.title || job.platform_name || "rationale").replace(/[^\w.-]+/g, "_")}.pdf`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (e) { toast.error(e instanceof ApiError ? e.message : "Could not download PDF"); }
+}
 
 const AUDIO_ACCEPT = ".mp3,.m4a,.wav,.aac,audio/*";
 const AUDIO_EXTS = ["mp3", "m4a", "wav", "aac"];
@@ -188,17 +229,42 @@ export default function MediaPresence() {
   const [progress, setProgress] = useState<number | null>(null);
   const [confirmDel, setConfirmDel] = useState<Job | null>(null);
   const [playing, setPlaying] = useState<Job | null>(null);
-  const [menuFor, setMenuFor] = useState<string | null>(null);
   const [analystOpen, setAnalystOpen] = useState(false);
   const isEdit = Boolean(form.id);
   const invalidate = () => qc.invalidateQueries({ queryKey: ["jobs"] });
+
+  const [filters, setFilters] = useState<Filters>(() => loadJSON(FILTER_KEY, EMPTY_FILTERS));
+  const [filterHistory, setFilterHistory] = useState<Filters[]>(() => loadJSON(FILTER_HIST_KEY, []));
+  const setFilter = (k: keyof Filters, v: string) => setFilters((f) => ({ ...f, [k]: v }));
+  const clearFilters = () => setFilters(EMPTY_FILTERS);
+  useEffect(() => { try { localStorage.setItem(FILTER_KEY, JSON.stringify(filters)); } catch { /* ignore */ } }, [filters]);
+  useEffect(() => {
+    if (isEmptyFilter(filters)) return;
+    const t = setTimeout(() => {
+      setFilterHistory((h) => {
+        const next = [filters, ...h.filter((f) => JSON.stringify(f) !== JSON.stringify(filters))].slice(0, 5);
+        try { localStorage.setItem(FILTER_HIST_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+        return next;
+      });
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [filters]);
+  const filtered = (jobs.data ?? []).filter((j) => {
+    const d = j.video_date || (j.created_at || "").slice(0, 10);
+    if (filters.from && d && d < filters.from) return false;
+    if (filters.to && d && d > filters.to) return false;
+    if (filters.platformType && j.platform_type !== filters.platformType) return false;
+    if (filters.channelId && j.platform_id !== filters.channelId) return false;
+    if (filters.status && j.status !== filters.status) return false;
+    if (filters.analystId && !j.analysts.some((a) => a.id === filters.analystId)) return false;
+    return true;
+  });
 
   const channels = (platforms.data ?? []).filter((p) => p.platform_type === form.platform_type);
   const selectedChannel = platforms.data?.find((p) => p.id === form.platform_id) ?? null;
 
   const openCreate = () => { setForm(EMPTY); setProgress(null); setOpen(true); };
   const openEdit = (j: Job) => {
-    setMenuFor(null);
     setForm({
       id: j.id,
       platform_type: j.platform_type ?? "youtube",
@@ -259,14 +325,9 @@ export default function MediaPresence() {
     onSuccess: () => { toast.success("Entry deleted"); setConfirmDel(null); invalidate(); },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : "Could not delete"),
   });
-  const start = useMutation({
-    mutationFn: (id: string) => api.post(`/jobs/${id}/start`),
-    onSuccess: (_d, id) => { toast.success("Pipeline started"); invalidate(); navigate(`/ai-rationale/${id}`); },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : "Could not start"),
-  });
   const restart = useMutation({
     mutationFn: (id: string) => api.post(`/jobs/${id}/restart`),
-    onSuccess: () => { toast.success("Restarting from step 1"); setMenuFor(null); invalidate(); },
+    onSuccess: () => { toast.success("Restarting from step 1"); invalidate(); },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : "Could not restart"),
   });
 
@@ -321,58 +382,117 @@ export default function MediaPresence() {
         <button className="btn-primary" onClick={openCreate}><Plus size={18} /> Add entry</button>
       </div>
 
+      {/* Filters */}
+      <div className="card p-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">From</label>
+            <input type="date" className="input" value={filters.from} onChange={(e) => setFilter("from", e.target.value)} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">To</label>
+            <input type="date" className="input" value={filters.to} onChange={(e) => setFilter("to", e.target.value)} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">Platform</label>
+            <select className="input" value={filters.platformType} onChange={(e) => setFilter("platformType", e.target.value)}>
+              <option value="">All</option>
+              {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">Channel</label>
+            <select className="input" value={filters.channelId} onChange={(e) => setFilter("channelId", e.target.value)}>
+              <option value="">All</option>
+              {(platforms.data ?? []).filter((p) => !filters.platformType || p.platform_type === filters.platformType).map((p) => <option key={p.id} value={p.id}>{p.channel_name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">Status</label>
+            <select className="input" value={filters.status} onChange={(e) => setFilter("status", e.target.value)}>
+              <option value="">All</option>
+              {(Object.keys(STATUS_META) as JobStatus[]).map((st) => <option key={st} value={st}>{STATUS_META[st].label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-500">Analyst</label>
+            <select className="input" value={filters.analystId} onChange={(e) => setFilter("analystId", e.target.value)}>
+              <option value="">All</option>
+              {(analysts.data ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+        </div>
+        {(!isEmptyFilter(filters) || filterHistory.length > 0) && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {!isEmptyFilter(filters) && (
+              <button className="text-xs font-medium text-slate-400 hover:text-brand" onClick={clearFilters}>Clear filters</button>
+            )}
+            {filterHistory.length > 0 && (
+              <>
+                <span className="ml-auto inline-flex items-center gap-1 text-xs text-slate-400"><Filter size={12} /> Recent:</span>
+                {filterHistory.map((f, idx) => (
+                  <button key={idx} onClick={() => setFilters(f)} title="Apply this filter"
+                    className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand/40 hover:bg-brand-50 hover:text-brand-700">
+                    {summarizeFilter(f, platforms.data ?? [], analysts.data ?? [])}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
       {jobs.isLoading ? (
         <div className="grid h-40 place-items-center"><Loader2 className="animate-spin text-slate-300" /></div>
-      ) : jobs.data && jobs.data.length > 0 ? (
-        <div className="card divide-y divide-slate-100">
-          {jobs.data.map((j) => {
+      ) : filtered.length > 0 ? (
+        <div className="card divide-y divide-slate-100 overflow-x-auto">
+          {filtered.map((j) => {
             const meta = PMETA[j.platform_type ?? "other"];
             const Icon = meta.icon;
             const st = STATUS_META[j.status];
-            const who = j.extract_all_stocks ? "All analysts" : j.analysts.map((a) => a.name).join(", ");
             return (
-              <div key={j.id} className="flex items-center gap-4 p-4">
+              <div key={j.id} className={`group flex min-w-[680px] items-center gap-3 px-4 py-3 transition-colors ${ROW_BG[j.status]} hover:bg-brand-50/40`}>
+                <span title={meta.label} className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${meta.color} transition-transform group-hover:scale-105`}><Icon size={16} /></span>
                 {j.platform_logo ? (
-                  <img src={j.platform_logo} alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover ring-1 ring-slate-200" />
+                  <img src={j.platform_logo} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover ring-1 ring-slate-200" />
                 ) : (
-                  <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${meta.color}`}><Icon size={20} /></span>
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-slate-100 text-xs font-semibold text-slate-500">{(j.platform_name ?? "?")[0]?.toUpperCase()}</span>
                 )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate font-medium">{j.title || j.platform_name || "Untitled appearance"}</span>
-                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${st.cls}`}>
-                      {st.pulse && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />}{st.label}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 truncate text-sm text-slate-500">
-                    {j.platform_name ?? "—"}{who ? <> · <span className="text-slate-600">{who}</span></> : null}
-                    {" · "}{fmtDateTime(j.video_date, j.video_time)}
-                  </div>
+                <div className="w-44 shrink-0">
+                  <div className="truncate font-medium text-slate-800">{j.platform_name ?? "—"}</div>
+                  <div className="truncate text-xs text-slate-400">{j.title || "Untitled appearance"}</div>
                 </div>
-
-                {(j.youtube_url || j.audio_url) && (
-                  <button className="btn-ghost px-3 py-2 text-xs" onClick={() => setPlaying(j)} title="Play"><Play size={14} /> Play</button>
-                )}
-                {j.status === "completed" && j.pdf_url && (
-                  <a className="btn-ghost px-3 py-2 text-xs" href={j.pdf_url} target="_blank" rel="noreferrer"><FileDown size={14} /> PDF</a>
-                )}
-                {j.status === "pending" && (
-                  <button className="btn-primary px-3 py-2 text-xs" disabled={start.isPending} onClick={() => start.mutate(j.id)}>
-                    <Sparkles size={14} /> Start making rationale
-                  </button>
-                )}
-                <div className="relative">
-                  <button className="btn-ghost px-2 py-2" onClick={() => setMenuFor(menuFor === j.id ? null : j.id)} aria-label="Actions"><MoreVertical size={16} /></button>
-                  {menuFor === j.id && (
-                    <>
-                      <button className="fixed inset-0 z-10 cursor-default" onClick={() => setMenuFor(null)} aria-hidden tabIndex={-1} />
-                      <div className="absolute right-0 z-20 mt-1 w-40 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                        <button className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50" onClick={() => openEdit(j)}><Pencil size={14} /> Edit</button>
-                        <button className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50" disabled={restart.isPending} onClick={() => restart.mutate(j.id)}><RotateCcw size={14} /> Restart</button>
-                        <button className="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger hover:bg-red-50" onClick={() => { setMenuFor(null); setConfirmDel(j); }}><Trash2 size={14} /> Delete</button>
-                      </div>
-                    </>
+                <div className="w-32 shrink-0 text-sm text-slate-600">{fmtDateTime(j.video_date, j.video_time)}</div>
+                <div className="flex w-28 shrink-0 items-center">
+                  {j.extract_all_stocks ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"><Users size={11} /> All</span>
+                  ) : j.analysts.length ? (
+                    <div className="flex -space-x-2">
+                      {j.analysts.slice(0, 4).map((a) => (
+                        a.avatar_path ? (
+                          <img key={a.id} src={a.avatar_path} alt={a.name} title={a.name} className="h-7 w-7 rounded-full object-cover ring-2 ring-white" />
+                        ) : (
+                          <span key={a.id} title={a.name} className="grid h-7 w-7 place-items-center rounded-full bg-brand-100 text-[10px] font-semibold text-brand-700 ring-2 ring-white">{a.name[0]?.toUpperCase()}</span>
+                        )
+                      ))}
+                      {j.analysts.length > 4 && <span className="grid h-7 w-7 place-items-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-500 ring-2 ring-white">+{j.analysts.length - 4}</span>}
+                    </div>
+                  ) : <span className="text-xs text-slate-400">—</span>}
+                </div>
+                <div className="flex flex-1 items-center justify-end gap-1">
+                  {(j.youtube_url || j.audio_url) && (
+                    <button onClick={() => setPlaying(j)} title="Play video" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Play size={16} /></button>
                   )}
+                  <button onClick={() => navigate(`/ai-rationale/${j.id}`)} title="Open pipeline"
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition hover:ring-2 hover:ring-brand/20 ${st.cls}`}>
+                    {st.pulse && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />}{st.label}
+                  </button>
+                  {(j.status === "completed" || j.status === "saved") && j.pdf_url && (
+                    <button onClick={() => downloadJobPdf(j)} title="Download PDF" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><FileDown size={16} /></button>
+                  )}
+                  <button onClick={() => openEdit(j)} title="Edit" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Pencil size={15} /></button>
+                  <button onClick={() => restart.mutate(j.id)} disabled={restart.isPending} title="Reload pipeline" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand disabled:opacity-40"><RotateCcw size={15} /></button>
+                  <button onClick={() => setConfirmDel(j)} title="Delete" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-danger"><Trash2 size={15} /></button>
                 </div>
               </div>
             );
@@ -381,9 +501,13 @@ export default function MediaPresence() {
       ) : (
         <div className="card grid place-items-center p-12 text-center">
           <span className="grid h-12 w-12 place-items-center rounded-full bg-slate-100 text-slate-400"><Radio size={22} /></span>
-          <h2 className="mt-4 text-lg font-semibold">No media appearances yet</h2>
-          <p className="mt-1 text-sm text-slate-500">Add an appearance to start building a rationale.</p>
-          <button className="btn-primary mt-4" onClick={openCreate}><Plus size={18} /> Add entry</button>
+          <h2 className="mt-4 text-lg font-semibold">{(jobs.data?.length ?? 0) > 0 ? "No matching entries" : "No media appearances yet"}</h2>
+          <p className="mt-1 text-sm text-slate-500">{(jobs.data?.length ?? 0) > 0 ? "Try adjusting or clearing the filters." : "Add an appearance to start building a rationale."}</p>
+          {(jobs.data?.length ?? 0) > 0 ? (
+            <button className="btn-ghost mt-4" onClick={clearFilters}>Clear filters</button>
+          ) : (
+            <button className="btn-primary mt-4" onClick={openCreate}><Plus size={18} /> Add entry</button>
+          )}
         </div>
       )}
 
