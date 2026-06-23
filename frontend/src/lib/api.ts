@@ -98,4 +98,14 @@ export const api = {
   del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
   postForm: <T>(path: string, formData: FormData) => request<T>(path, { method: "POST", formData }),
   patchForm: <T>(path: string, formData: FormData) => request<T>(path, { method: "PATCH", formData }),
+  /** Fetch a binary resource (e.g. audio/pdf) with the bearer token attached. */
+  getBlob: async (path: string): Promise<Blob> => {
+    const token = useAuthStore.getState().accessToken;
+    const res = await fetch(`${BASE}${path}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: "include",
+    });
+    if (!res.ok) throw await parseError(res);
+    return res.blob();
+  },
 };

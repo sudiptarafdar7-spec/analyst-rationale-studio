@@ -27,6 +27,8 @@ class JobListItem(BaseModel):
     id: uuid.UUID
     platform_id: uuid.UUID | None = None
     platform_name: str | None = None
+    platform_type: str | None = None
+    platform_logo: str | None = None
     analyst_id: uuid.UUID | None = None
     analyst_name: str | None = None
     title: str | None = None
