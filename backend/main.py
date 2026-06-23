@@ -17,6 +17,7 @@ from api.health import router as health_router
 from api.jobs import router as jobs_router
 from api.jobs_pipeline import router as jobs_pipeline_router
 from api.jobs_pipeline import ws_router
+from api.jobs_review import router as jobs_review_router
 from api.pdf_template import router as pdf_template_router
 from api.platforms import router as platforms_router
 from api.tools import router as tools_router
@@ -56,6 +57,7 @@ app.include_router(youtube_router, prefix="/api")
 app.include_router(tools_router, prefix="/api")
 app.include_router(jobs_router, prefix="/api")
 app.include_router(jobs_pipeline_router, prefix="/api")
+app.include_router(jobs_review_router, prefix="/api")
 app.include_router(ws_router)  # WS /ws/jobs/{id} (no /api prefix)
 
 # Serve uploaded files (avatars, logos, ...) from the upload dir.
