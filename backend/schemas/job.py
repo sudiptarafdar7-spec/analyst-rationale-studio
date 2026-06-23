@@ -21,6 +21,12 @@ class JobStepOut(BaseModel):
     finished_at: dt.datetime | None = None
 
 
+class AnalystRef(BaseModel):
+    id: uuid.UUID
+    name: str
+    avatar_path: str | None = None
+
+
 class JobListItem(BaseModel):
     """One Media Presence row."""
 
@@ -29,8 +35,7 @@ class JobListItem(BaseModel):
     platform_name: str | None = None
     platform_type: str | None = None
     platform_logo: str | None = None
-    analyst_id: uuid.UUID | None = None
-    analyst_name: str | None = None
+    analysts: list[AnalystRef] = []
     title: str | None = None
     youtube_url: str | None = None
     video_date: dt.date | None = None
@@ -54,7 +59,7 @@ class JobDetailOut(JobListItem):
 
 class JobUpdateIn(BaseModel):
     platform_id: uuid.UUID | None = None
-    analyst_id: uuid.UUID | None = None
+    analyst_ids: list[uuid.UUID] | None = None
     title: str | None = None
     youtube_url: str | None = None
     video_date: dt.date | None = None

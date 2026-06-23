@@ -1,7 +1,9 @@
 """Media Presence jobs — create/list/detail/edit/delete + audio streaming.
 
-One job == one media appearance to be turned into a compliance PDF. Audio is
-stored under job_files/<job_id>/audio/ and streamed back through an authenticated
+One job == one media appearance to be turned into a compliance PDF. A job can
+target multiple analysts (job_analysts link table); when extract_all_stocks is
+set, no targets are needed and every analyst's calls are extracted. Audio is
+stored under job_files/<job_id>/audio/ and streamed via an authenticated
 endpoint (job_files is not web-served). Pipeline control lives in jobs_pipeline.py.
 """
 from __future__ import annotations
@@ -12,23 +14,21 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from core.config import settings
 from core.deps import get_current_user
 from db.enums import JobStatus, UploadedFileType, UserRole
-from db.models import Analyst, Channel, Job, JobStep, Platform, UploadedFile, User
+from db.models import Analyst, Channel, Job, JobAnalyst, JobStep, Platform, UploadedFile, User
 from db.session import get_db
-from schemas.job import JobDetailOut, JobListItem, JobStepOut, JobUpdateIn
+from schemas.job import AnalystRef, JobDetailOut, JobListItem, JobStepOut, JobUpdateIn
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 MAX_AUDIO_BYTES = 500 * 1024 * 1024  # 500 MB
 AUDIO_EXTS = {".mp3", ".m4a", ".wav", ".aac"}
-AUDIO_MEDIA = {
-    ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".wav": "audio/wav", ".aac": "audio/aac",
-}
+AUDIO_MEDIA = {".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".wav": "audio/wav", ".aac": "audio/aac"}
 
 
 def _job_folder(job_id) -> str:
@@ -40,11 +40,7 @@ def _platform_label(platform: Platform | None) -> str | None:
 
 
 def _snapshot_channel(db: Session, platform: Platform) -> Channel:
-    """Snapshot the firm-branding channel row from the selected platform.
-
-    The PDF footer joins jobs -> channels; snapshotting at job time decouples the
-    rendered PDF from later edits to the platform.
-    """
+    """Snapshot the firm-branding channel row from the selected platform."""
     channel = Channel(
         channel_name=platform.channel_name,
         channel_logo_path=platform.channel_logo_path,
@@ -64,17 +60,40 @@ def _audio_url(job: Job) -> str | None:
     return f"/api/jobs/{job.id}/audio" if job.audio_file_id else None
 
 
+def _analysts_for(db: Session, job_id) -> list[AnalystRef]:
+    rows = db.scalars(select(JobAnalyst).where(JobAnalyst.job_id == job_id)).all()
+    refs: list[AnalystRef] = []
+    for r in rows:
+        a = db.get(Analyst, r.analyst_id)
+        if a:
+            refs.append(AnalystRef(id=a.id, name=a.name, avatar_path=a.avatar_path))
+    return refs
+
+
+def _set_analysts(db: Session, job: Job, analyst_ids: list[uuid.UUID]) -> None:
+    """Replace the job's target-analyst set. Validates each id exists."""
+    db.execute(delete(JobAnalyst).where(JobAnalyst.job_id == job.id))
+    seen: set[uuid.UUID] = set()
+    for aid in analyst_ids:
+        if aid in seen:
+            continue
+        if db.get(Analyst, aid) is None:
+            raise HTTPException(status_code=404, detail=f"Analyst not found: {aid}")
+        db.add(JobAnalyst(job_id=job.id, analyst_id=aid))
+        seen.add(aid)
+    # Keep the legacy single column pointing at the first target (or None).
+    job.analyst_id = next(iter(analyst_ids), None)
+
+
 def _to_list_item(db: Session, job: Job) -> JobListItem:
     platform = db.get(Platform, job.platform_id) if job.platform_id else None
-    analyst = db.get(Analyst, job.analyst_id) if job.analyst_id else None
     return JobListItem(
         id=job.id,
         platform_id=job.platform_id,
         platform_name=platform.channel_name if platform else None,
         platform_type=platform.platform_type.value if platform else None,
         platform_logo=platform.channel_logo_path if platform else None,
-        analyst_id=job.analyst_id,
-        analyst_name=analyst.name if analyst else None,
+        analysts=_analysts_for(db, job.id),
         title=job.title,
         youtube_url=job.youtube_url,
         video_date=job.video_date,
@@ -105,10 +124,7 @@ def _to_detail(db: Session, job: Job) -> JobDetailOut:
 
 
 @router.get("", response_model=list[JobListItem])
-def list_jobs(
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> list[JobListItem]:
+def list_jobs(db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> list[JobListItem]:
     stmt = select(Job).order_by(Job.created_at.desc())
     if user.role != UserRole.admin:
         stmt = stmt.where(Job.created_by == user.id)
@@ -119,7 +135,7 @@ def list_jobs(
 async def create_job(
     platform_id: uuid.UUID = Form(...),
     channel_id: uuid.UUID | None = Form(None),
-    analyst_id: uuid.UUID | None = Form(None),
+    analyst_ids: list[uuid.UUID] = Form(default=[]),
     extract_all_stocks: bool = Form(False),
     youtube_url: str | None = Form(None),
     title: str | None = Form(None),
@@ -132,10 +148,7 @@ async def create_job(
     platform = db.get(Platform, platform_id)
     if platform is None or not platform.is_active:
         raise HTTPException(status_code=404, detail="Platform not found")
-    if analyst_id is not None and db.get(Analyst, analyst_id) is None:
-        raise HTTPException(status_code=404, detail="Analyst not found")
 
-    # Use an explicit channel if supplied, else snapshot one from the platform.
     if channel_id is not None:
         channel = db.get(Channel, channel_id)
         if channel is None:
@@ -146,7 +159,6 @@ async def create_job(
     job = Job(
         platform_id=platform.id,
         channel_id=channel.id,
-        analyst_id=analyst_id,
         extract_all_stocks=extract_all_stocks,
         youtube_url=(youtube_url.strip() if youtube_url else None),
         title=(title.strip() if title else None),
@@ -156,7 +168,10 @@ async def create_job(
         created_by=user.id,
     )
     db.add(job)
-    db.flush()  # assign job.id for the audio path
+    db.flush()  # assign job.id
+
+    # Targets only matter when not extracting every analyst.
+    _set_analysts(db, job, [] if extract_all_stocks else list(analyst_ids))
 
     if audio is not None and audio.filename:
         ext = os.path.splitext(audio.filename)[1].lower()
@@ -167,16 +182,13 @@ async def create_job(
             raise HTTPException(status_code=413, detail="Audio exceeds the 500 MB limit.")
         audio_dir = os.path.join(_job_folder(job.id), "audio")
         os.makedirs(audio_dir, exist_ok=True)
-        safe = "".join(ch for ch in os.path.basename(audio.filename) if ch.isalnum() or ch in "._- ").strip() or "audio" + ext
+        safe = "".join(ch for ch in os.path.basename(audio.filename) if ch.isalnum() or ch in "._- ").strip() or f"audio{ext}"
         abs_path = os.path.join(audio_dir, safe)
         with open(abs_path, "wb") as fh:
             fh.write(contents)
         uf = UploadedFile(
-            file_type=UploadedFileType.audio,
-            file_path=abs_path,
-            file_name=audio.filename,
-            mime_type=audio.content_type or AUDIO_MEDIA.get(ext),
-            size_bytes=len(contents),
+            file_type=UploadedFileType.audio, file_path=abs_path, file_name=audio.filename,
+            mime_type=audio.content_type or AUDIO_MEDIA.get(ext), size_bytes=len(contents),
             uploaded_by=user.id,
         )
         db.add(uf)
@@ -189,11 +201,7 @@ async def create_job(
 
 
 @router.get("/{job_id}", response_model=JobDetailOut)
-def get_job(
-    job_id: uuid.UUID,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> JobDetailOut:
+def get_job(job_id: uuid.UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> JobDetailOut:
     job = db.get(Job, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -202,11 +210,7 @@ def get_job(
 
 
 @router.get("/{job_id}/audio")
-def stream_audio(
-    job_id: uuid.UUID,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> FileResponse:
+def stream_audio(job_id: uuid.UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> FileResponse:
     job = db.get(Job, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -222,12 +226,8 @@ def stream_audio(
 
 
 @router.patch("/{job_id}", response_model=JobDetailOut)
-def update_job(
-    job_id: uuid.UUID,
-    body: JobUpdateIn,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> JobDetailOut:
+def update_job(job_id: uuid.UUID, body: JobUpdateIn, db: Session = Depends(get_db),
+               user: User = Depends(get_current_user)) -> JobDetailOut:
     job = db.get(Job, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -241,10 +241,6 @@ def update_job(
             raise HTTPException(status_code=404, detail="Platform not found")
         job.platform_id = platform.id
         job.channel_id = _snapshot_channel(db, platform).id
-    if body.analyst_id is not None:
-        if db.get(Analyst, body.analyst_id) is None:
-            raise HTTPException(status_code=404, detail="Analyst not found")
-        job.analyst_id = body.analyst_id
     if body.title is not None:
         job.title = body.title.strip() or None
     if body.youtube_url is not None:
@@ -255,6 +251,11 @@ def update_job(
         job.video_time = body.video_time
     if body.extract_all_stocks is not None:
         job.extract_all_stocks = body.extract_all_stocks
+    # Resolve the target set: explicit list, or cleared when extracting all.
+    if job.extract_all_stocks:
+        _set_analysts(db, job, [])
+    elif body.analyst_ids is not None:
+        _set_analysts(db, job, body.analyst_ids)
 
     db.commit()
     db.refresh(job)
@@ -262,21 +263,15 @@ def update_job(
 
 
 @router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_job(
-    job_id: uuid.UUID,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> None:
+def delete_job(job_id: uuid.UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> None:
     job = db.get(Job, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     _ensure_access(job, user)
-
-    # All per-job artifacts (incl. audio under audio/) live in the job folder.
     shutil.rmtree(_job_folder(job.id), ignore_errors=True)
     if job.audio_file_id:
         uf = db.get(UploadedFile, job.audio_file_id)
         if uf:
             db.delete(uf)
-    db.delete(job)  # job_steps / job_chart_uploads cascade
+    db.delete(job)  # job_steps / job_chart_uploads / job_analysts cascade
     db.commit()

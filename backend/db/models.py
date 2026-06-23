@@ -345,3 +345,15 @@ class RefreshToken(Base):
     created_at: Mapped[dt.datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+# --- 14. job_analysts (target analysts per job — many-to-many) --------------
+class JobAnalyst(Base):
+    __tablename__ = "job_analysts"
+
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True
+    )
+    analyst_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("analysts.id", ondelete="CASCADE"), primary_key=True
+    )

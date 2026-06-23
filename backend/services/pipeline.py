@@ -22,7 +22,7 @@ from sqlalchemy import delete, select
 
 from core.config import settings
 from db.enums import GateKind, JobStatus, StepStatus
-from db.models import Analyst, Job, JobStep, UploadedFile
+from db.models import Analyst, Job, JobAnalyst, JobStep, UploadedFile
 from db.session import SessionLocal
 from services.progress_hub import hub
 from utils.path_utils import resolve_uploaded_file_path
@@ -46,15 +46,19 @@ def job_folder(job_id) -> str:
 def _analyst_overrides(job: Job, db) -> dict:
     """Target-analyst context for the AI steps.
 
-    When extract_all_stocks is set, targeting is disabled (empty name/aliases)
-    so every analyst's calls are extracted.
+    A job may target several analysts (job_analysts). Their names join into the
+    target label and all their aliases are unioned. When extract_all_stocks is
+    set, targeting is disabled so every analyst's calls are extracted.
     """
-    if job.extract_all_stocks or not job.analyst_id:
+    if job.extract_all_stocks:
         return {"target_analyst_name": "", "aliases": ""}
-    analyst = db.get(Analyst, job.analyst_id)
-    if not analyst:
+    rows = db.scalars(select(JobAnalyst).where(JobAnalyst.job_id == job.id)).all()
+    analysts = [a for a in (db.get(Analyst, r.analyst_id) for r in rows) if a]
+    if not analysts:
         return {"target_analyst_name": "", "aliases": ""}
-    return {"target_analyst_name": analyst.name or "", "aliases": analyst.aliases or ""}
+    names = [a.name for a in analysts if a.name]
+    aliases = ", ".join(a.aliases for a in analysts if a.aliases)
+    return {"target_analyst_name": "; ".join(names), "aliases": aliases}
 
 
 def _call_date(job: Job) -> str:
