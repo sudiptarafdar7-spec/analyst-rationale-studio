@@ -6,8 +6,12 @@ streams emoji logs to the progress hub, and halts at the review gates
 Runs in a worker thread via FastAPI BackgroundTasks; owns its own DB session.
 
 Steps are dispatched through STEP_ADAPTERS (module-level) so the state machine
-can be exercised in isolation. Each adapter does the file IO around a tool's
-run() and returns a small result dict.
+can be exercised in isolation. Each adapter is called with (job, db, cfg) where
+cfg = effective_config_for(step, job) and does the file IO around a tool's run().
+
+The worker boundary is deliberately thin (run_pipeline / resume / restart /
+retry_step are plain callables) so it can move from BackgroundTasks to a
+Celery/RQ task later without touching the state-machine logic.
 """
 from __future__ import annotations
 
@@ -33,6 +37,8 @@ STEP_KEYS = {
     9: "generate_charts", 10: "generate_pdf",
 }
 GATES = {4: GateKind.extract_review, 7: GateKind.mapping_review}
+ANALYST_STEPS = {3, 4}          # steps that target the selected analyst(s)
+DATETIME_STEPS = {5, 9}         # steps that need the job's call date/time
 LAST_STEP = 10
 
 
@@ -67,6 +73,21 @@ def _call_date(job: Job) -> str:
 
 def _call_time(job: Job) -> str:
     return job.video_time.strftime("%H:%M:%S") if job.video_time else "15:30:00"
+
+
+def effective_config_for(n: int, job: Job, db) -> dict:
+    """Per-step effective configuration (docs/02 §5).
+
+    The tool's own get_effective_config layers DEFAULT_CONFIG ⊕ tool_configs, and
+    ai_router.resolve_model layers the ai_models provider/model mapping. This
+    function adds the remaining layer — per-job context — which is passed to the
+    tool as overrides: target analyst name/aliases for the AI targeting steps,
+    and the job's call date/time for the steps that need them.
+    """
+    cfg: dict = {"call_date": _call_date(job), "call_time": _call_time(job)}
+    if n in ANALYST_STEPS:
+        cfg.update(_analyst_overrides(job, db))
+    return cfg
 
 
 def _emit(job_id, event: dict) -> None:
@@ -132,7 +153,7 @@ def _upsert_step(db, job_id, step_no, status, *, log_tail=None, error=None,
 
 
 # --------------------------------------------------------------------------- #
-# Step adapters — each: (job, db) -> result dict
+# Step adapters — each: (job, db, cfg) -> result dict
 # --------------------------------------------------------------------------- #
 def _read(path: str) -> str:
     with open(path, "r", encoding="utf-8") as f:
@@ -145,7 +166,7 @@ def _write(path: str, text: str) -> None:
         f.write(text)
 
 
-def _step_transcribe(job, db) -> dict:
+def _step_transcribe(job, db, cfg) -> dict:
     from tools.step01_transcribe import runtime as t
     if not job.audio_file_id:
         raise RuntimeError("No audio uploaded for this job.")
@@ -157,11 +178,10 @@ def _step_transcribe(job, db) -> dict:
     return {"output_paths": {"transcript": os.path.join(job_folder(job.id), "transcripts", "transcript.txt")}}
 
 
-def _step_translate(job, db) -> dict:
+def _step_translate(job, db, cfg) -> dict:
     from tools.step02_translate import runtime as t
     jf = job_folder(job.id)
-    src = os.path.join(jf, "transcripts", "transcript.txt")
-    res = t.run(text=_read(src))
+    res = t.run(text=_read(os.path.join(jf, "transcripts", "transcript.txt")))
     if not res.get("success"):
         raise RuntimeError(res.get("error") or "Translation failed")
     out = os.path.join(jf, "translated.txt")
@@ -169,10 +189,10 @@ def _step_translate(job, db) -> dict:
     return {"output_paths": {"translated": out}, "skipped": res.get("skipped", False)}
 
 
-def _step_speakers(job, db) -> dict:
+def _step_speakers(job, db, cfg) -> dict:
     from tools.step03_detect_speakers import runtime as t
     jf = job_folder(job.id)
-    res = t.run(_read(os.path.join(jf, "translated.txt")), overrides=_analyst_overrides(job, db))
+    res = t.run(_read(os.path.join(jf, "translated.txt")), overrides=cfg)
     if not res.get("success"):
         raise RuntimeError(res.get("error") or "Speaker detection failed")
     out = os.path.join(jf, "speakers.txt")
@@ -180,10 +200,10 @@ def _step_speakers(job, db) -> dict:
     return {"output_paths": {"speakers": out}}
 
 
-def _step_extract(job, db) -> dict:
+def _step_extract(job, db, cfg) -> dict:
     from tools.step04_extract_analysis import runtime as t
     jf = job_folder(job.id)
-    res = t.run(_read(os.path.join(jf, "speakers.txt")), overrides=_analyst_overrides(job, db))
+    res = t.run(_read(os.path.join(jf, "speakers.txt")), overrides=cfg)
     if not res.get("success"):
         raise RuntimeError(res.get("error") or "Extraction failed")
     extracted = res["arranged_text"]
@@ -193,15 +213,15 @@ def _step_extract(job, db) -> dict:
     return {"output_paths": {"extracted": os.path.join(jf, "extracted.txt")}}
 
 
-def _step_convert_csv(job, db) -> dict:
+def _step_convert_csv(job, db, cfg) -> dict:
     from tools.step05_convert_csv import runtime as t
-    res = t.run(job_folder(job.id), _call_date(job), _call_time(job))
+    res = t.run(job_folder(job.id), cfg["call_date"], cfg["call_time"])
     if not res.get("success"):
         raise RuntimeError(res.get("error") or "CSV conversion failed")
     return {"output_paths": {"bulk_input": res.get("output_file")}}
 
 
-def _step_polish(job, db) -> dict:
+def _step_polish(job, db, cfg) -> dict:
     from tools.step06_polish import runtime as t
     res = t.run(job_folder(job.id))
     if not res.get("success"):
@@ -209,7 +229,7 @@ def _step_polish(job, db) -> dict:
     return {"output_paths": {"polished": res.get("output_file")}}
 
 
-def _step_map_master(job, db) -> dict:
+def _step_map_master(job, db, cfg) -> dict:
     from tools.step07_map_master import runtime as t
     res = t.run(job_folder(job.id))
     if not res.get("success"):
@@ -217,7 +237,7 @@ def _step_map_master(job, db) -> dict:
     return {"output_paths": {"mapped": res.get("output_file")}}
 
 
-def _step_fetch_cmp(job, db) -> dict:
+def _step_fetch_cmp(job, db, cfg) -> dict:
     from tools.step08_fetch_cmp import runtime as t
     res = t.run(job_folder(job.id))
     if not res.get("success"):
@@ -225,16 +245,16 @@ def _step_fetch_cmp(job, db) -> dict:
     return {"output_paths": {"cmp": res.get("output_file")}}
 
 
-def _step_charts(job, db) -> dict:
+def _step_charts(job, db, cfg) -> dict:
     from tools.step09_generate_charts import runtime as t
-    res = t.run(job_folder(job.id), _call_date(job), _call_time(job))
+    res = t.run(job_folder(job.id), cfg["call_date"], cfg["call_time"])
     if not res.get("success"):
         raise RuntimeError(res.get("error") or "Chart generation failed")
     return {"output_paths": {"charts": res.get("output_file")},
             "failed_count": int(res.get("failed_count", 0))}
 
 
-def _step_pdf(job, db) -> dict:
+def _step_pdf(job, db, cfg) -> dict:
     from tools.step10_generate_pdf import runtime as t
     res = t.run(job_folder(job.id))
     if not res.get("success"):
@@ -278,8 +298,9 @@ def run_pipeline(job_id, start_step: int = 1) -> None:
             _upsert_step(db, job_id, n, StepStatus.running, started=True)
 
             try:
+                cfg = effective_config_for(n, job, db)
                 with _capture(job_id, n) as tee:
-                    result = STEP_ADAPTERS[n](job, db)
+                    result = STEP_ADAPTERS[n](job, db, cfg)
                 db.refresh(job)
             except Exception as exc:  # noqa: BLE001
                 tail = locals().get("tee").tail() if locals().get("tee") else ""
