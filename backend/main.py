@@ -15,7 +15,9 @@ from api.files import router as files_router
 from api.health import router as health_router
 from api.pdf_template import router as pdf_template_router
 from api.platforms import router as platforms_router
+from api.tools import router as tools_router
 from api.users import router as users_router
+from api.youtube import router as youtube_router
 from core.config import settings
 
 app = FastAPI(title="Analyst Rationale Studio API", version="0.1.0")
@@ -38,6 +40,8 @@ app.include_router(analysts_router, prefix="/api")
 app.include_router(files_router, prefix="/api")
 app.include_router(pdf_template_router, prefix="/api")
 app.include_router(ai_models_router, prefix="/api")
+app.include_router(youtube_router, prefix="/api")
+app.include_router(tools_router, prefix="/api")
 
 # Serve uploaded files (avatars, logos, ...) from the upload dir.
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
