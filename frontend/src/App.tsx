@@ -7,11 +7,11 @@ import Toaster from "./components/Toaster";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Profile from "./pages/Profile";
-import Placeholder from "./pages/Placeholder";
 import MediaPresence from "./pages/MediaPresence";
 import AiRationale from "./pages/AiRationale";
 import WorkPage from "./pages/WorkPage";
 import SavedRationale from "./pages/SavedRationale";
+import GenerateChart from "./pages/GenerateChart";
 import ManageApiKeys from "./pages/admin/ManageApiKeys";
 import ManagePlatform from "./pages/admin/ManagePlatform";
 import AnalystsProfile from "./pages/admin/AnalystsProfile";
@@ -42,7 +42,7 @@ export default function App() {
           <Route path="/media-presence" element={<MediaPresence />} />
           <Route path="/ai-rationale" element={<AiRationale />} />
           <Route path="/ai-rationale/:jobId" element={<WorkPage />} />
-          <Route path="/generate-chart" element={<Placeholder title="Generate Chart" phase="Phase 10" />} />
+          <Route path="/generate-chart" element={<GenerateChart />} />
           <Route path="/saved" element={<SavedRationale />} />
           <Route path="/profile" element={<Profile />} />
 
