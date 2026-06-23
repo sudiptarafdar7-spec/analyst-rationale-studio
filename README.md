@@ -1,49 +1,99 @@
 # Analyst Rationale Studio
 
-A SEBI-compliance platform for stock-market research-analyst firms. It turns an analyst's daily
-media appearance (audio + video link) into a branded, compliant **rationale PDF** that records
-every stock recommendation the firm's target analyst made on air — even when the stock name was
-spoken only by the host.
+A SEBI-compliance platform for stock-market research-analyst firms. It turns an
+analyst's media appearance (audio + video link) into a branded compliance PDF via
+a resumable 10-step AI pipeline with human review gates.
 
-## What it does
-1. **Media Presence** — log each appearance: platform, channel, video URL (YouTube autofill),
-   audio upload, target analyst, "extract all stocks" toggle.
-2. **AI Rationale** — a 10-step pipeline: Transcribe (Deepgram) → Translate → Detect Speakers →
-   **Extract target analyst's calls** → CSV → Polish → Map to Scrip Master → Fetch CMP →
-   Generate Charts → Generate PDF. Three human-review gates along the way.
-3. **Saved Rationale** — archive of finished compliance PDFs.
+- **Backend:** Python 3.11+, FastAPI, PostgreSQL (SQLAlchemy 2 + Alembic), JWT auth.
+- **Frontend:** React 18 + Vite + TypeScript + TailwindCSS + TanStack Query + Zustand.
+- **Pipeline:** Deepgram (transcribe) → translate → detect speakers → extract →
+  CSV → polish → map master → fetch CMP → charts → PDF, with review gates after
+  steps 4 and 7 and a conditional chart-upload gate in step 9.
 
-## Tech stack
-- Backend: **FastAPI + PostgreSQL** (SQLAlchemy 2, Alembic)
-- Frontend: **React + Vite + TypeScript + Tailwind**
-- AI: OpenAI / Anthropic / Gemini (admin-selectable per task), Deepgram (transcription)
-- Market data: Dhan API (CMP + charts), YouTube Data API v3
-- Charts: matplotlib + mplfinance · PDF: reportlab
+## Prerequisites
 
-## Roles
-- **Admin**: platforms, API keys, AI model mapping, required files, PDF template, analysts — plus
-  everything employees do.
-- **Employee**: dashboard, media presence, AI rationale, generate chart, saved rationale, profile.
+- Python 3.11+ and `pip`
+- Node.js 18+ and `npm`
+- PostgreSQL 14+ running locally (with the `citext` and `pgcrypto` extensions available)
 
-## How to use these docs (for Claude Code)
-Read in this order:
-1. `CLAUDE.md` — primary instructions, conventions, definition of done.
-2. `docs/01_PRD.md` — requirements & acceptance criteria.
-3. `docs/02_ARCHITECTURE.md` — system design, job state machine.
-4. `docs/03_DATABASE_SCHEMA.md` — full PostgreSQL schema.
-5. `docs/04_BACKEND_API.md` — every endpoint + WebSocket contract.
-6. `docs/05_PIPELINE.md` — the 10-step pipeline, gates, resume logic.
-7. `docs/06_TOOLS_AND_MODELS.md` — tool convention, AI model management, integrations.
-8. `docs/07_FRONTEND_UIUX.md` — design system, navigation, all screens.
-9. `docs/08_BUILD_ORDER.md` — **the phased prompt sequence to actually build it**.
-10. `docs/09_SETUP.md` — env, deps, skill install, run commands.
+## 1. Database
 
-Put your existing Python under `docs/reference_code/` (see `docs/09_SETUP.md §8`); Phase 4 ports it.
+Create a database (default name `ars`):
 
-## Quickstart
-See `docs/09_SETUP.md`. TL;DR: `docker compose up -d postgres`, `alembic upgrade head`,
-`python -m scripts.seed`, `uvicorn main:app --reload`, then `npm run dev` in `frontend/`.
+```bash
+createdb ars
+```
 
-## Build approach
-Follow `docs/08_BUILD_ORDER.md` phase by phase. Get one vertical slice working before expanding.
-Commit per phase.
+## 2. Backend
+
+```bash
+cd backend
+python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Create `backend/.env` (or repo-root `.env`):
+
+```
+DATABASE_URL=postgresql+psycopg2://<user>:<password>@localhost:5432/ars
+JWT_SECRET=<a-long-random-string>
+APP_ENCRYPTION_KEY=<fernet-key>          # python -c "import base64,os;print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+```
+
+Apply migrations and seed the first admin (the app also self-heals the schema on
+startup, but running migrations explicitly is recommended):
+
+```bash
+alembic upgrade head
+python scripts/seed.py                    # creates the admin user + default config
+uvicorn main:app --reload                 # http://localhost:8000  (docs at /docs)
+```
+
+## 3. Frontend
+
+```bash
+cd frontend
+npm install                               # installs deps incl. recharts
+npm run dev                               # http://localhost:5173 (proxies /api, /uploads, /ws -> :8000)
+```
+
+Open http://localhost:5173 and sign in with the seeded admin credentials.
+
+## 4. Configure integrations (admin)
+
+API keys are **not** stored in code or `.env` — add them in the UI under
+**Manage API Keys** (encrypted at rest): OpenAI / Anthropic / Gemini, Deepgram,
+Dhan, and YouTube. Then set per-task models under **Manage AI Models**, upload the
+scrip master CSV + company logo/fonts under **Upload Required Files**, and fill the
+**PDF Template**. Without these, pipeline steps that call external services will
+fail gracefully with a clear error.
+
+## 5. Typical flow
+
+1. **Media Presence** → add an appearance (platform, channel, video URL with
+   "Fetch details" autofill, audio upload, target analysts).
+2. **Start making rationale** → opens the **AI Rationale** work page: live step
+   progress over WebSocket, with three review gates (edit extracted calls, fix the
+   stock mapping, upload any missing charts).
+3. On completion, preview the branded PDF and **Save** it.
+4. **Saved Rationale** → searchable archive with PDF download.
+5. **Generate Chart** → standalone premium chart for any scrip.
+
+## Tests
+
+```bash
+cd backend
+# pure-logic unit tests (no DB needed; any parseable DATABASE_URL)
+DATABASE_URL=postgresql+psycopg2://u:p@localhost/db pytest tests/test_pipeline_logic.py
+
+# end-to-end happy path (needs a reachable DATABASE_URL; skips otherwise)
+DATABASE_URL=postgresql+psycopg2://<user>:<pw>@localhost/ars pytest tests/test_e2e_happy_path.py
+```
+
+## Security notes
+
+- JWT access tokens + httpOnly refresh cookie; API keys encrypted with Fernet.
+- `/auth/login` and the AI/Dhan connectivity-test endpoints are rate-limited.
+- PDFs and intermediate artifacts are downloadable via short-lived **signed URLs**
+  (HMAC + expiry) in addition to bearer auth.
+- Uploads are validated by type/size and stored outside the web root.

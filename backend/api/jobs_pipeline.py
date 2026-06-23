@@ -26,7 +26,8 @@ from core.security import decode_access_token
 from db.enums import JobStatus
 from db.models import Job, JobStep, User
 from db.session import SessionLocal, get_db
-from core.deps import get_current_user
+from core.deps import get_current_user, get_optional_user
+from core.signing import DEFAULT_TTL_SECONDS, sign_path, verify_path
 from schemas.job import JobStepOut
 from services import pipeline
 from services.progress_hub import hub
@@ -147,14 +148,40 @@ def get_steps(
     )
 
 
+def _authorize_download(job_id, resource: str, db, user, sig, exp):
+    """Allow access via a valid signed URL, else fall back to bearer ownership."""
+    if sig and exp and verify_path(resource, exp, sig):
+        job = db.get(Job, job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return job
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated", headers={"WWW-Authenticate": "Bearer"})
+    return _load_owned(job_id, db, user)
+
+
+@router.get("/{job_id}/artifact-url")
+def artifact_signed_url(
+    job_id: uuid.UUID, key: str = Query(...),
+    db: Session = Depends(get_db), user: User = Depends(get_current_user),
+) -> dict:
+    _load_owned(job_id, db, user)
+    if key not in ARTIFACTS:
+        raise HTTPException(status_code=400, detail=f"Unknown artifact key: {key}")
+    resource = f"jobs/{job_id}/artifact/{key}"
+    sig, exp = sign_path(resource)
+    return {"url": f"/api/jobs/{job_id}/artifact?key={key}&exp={exp}&sig={sig}", "expires_in": DEFAULT_TTL_SECONDS}
+
+
 @router.get("/{job_id}/artifact")
 def get_artifact(
     job_id: uuid.UUID,
     key: str = Query(..., description="One of the whitelisted artifact keys"),
+    exp: int | None = Query(None), sig: str | None = Query(None),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User | None = Depends(get_optional_user),
 ) -> FileResponse:
-    _load_owned(job_id, db, user)
+    _authorize_download(job_id, f"jobs/{job_id}/artifact/{key}", db, user, sig, exp)
     rel = ARTIFACTS.get(key)
     if rel is None:
         raise HTTPException(status_code=400, detail=f"Unknown artifact key: {key}")
@@ -164,13 +191,23 @@ def get_artifact(
     return FileResponse(path, filename=os.path.basename(path))
 
 
+@router.get("/{job_id}/pdf-url")
+def pdf_signed_url(
+    job_id: uuid.UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user),
+) -> dict:
+    _load_owned(job_id, db, user)
+    sig, exp = sign_path(f"jobs/{job_id}/pdf")
+    return {"url": f"/api/jobs/{job_id}/pdf?exp={exp}&sig={sig}", "expires_in": DEFAULT_TTL_SECONDS}
+
+
 @router.get("/{job_id}/pdf")
 def get_pdf(
     job_id: uuid.UUID,
+    exp: int | None = Query(None), sig: str | None = Query(None),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User | None = Depends(get_optional_user),
 ) -> FileResponse:
-    job = _load_owned(job_id, db, user)
+    job = _authorize_download(job_id, f"jobs/{job_id}/pdf", db, user, sig, exp)
     if not job.output_pdf_path or not os.path.isfile(job.output_pdf_path):
         raise HTTPException(status_code=404, detail="PDF not available.")
     return FileResponse(job.output_pdf_path, media_type="application/pdf",

@@ -39,3 +39,12 @@ login_limiter = SlidingWindowLimiter(max_requests=10, window_seconds=60)
 def rate_limit_login(request: Request) -> None:
     client = request.client.host if request.client else "unknown"
     login_limiter.check(f"login:{client}")
+
+
+# 20 connectivity-test calls per minute per client IP (AI / Dhan / provider tests).
+test_limiter = SlidingWindowLimiter(max_requests=20, window_seconds=60)
+
+
+def rate_limit_test(request: Request) -> None:
+    client = request.client.host if request.client else "unknown"
+    test_limiter.check(f"test:{client}")

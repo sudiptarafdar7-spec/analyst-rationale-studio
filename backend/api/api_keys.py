@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from core.crypto import EncryptionError, decrypt, encrypt
+from core.rate_limit import rate_limit_test
 from core.deps import require_admin
 from core.security import verify_password
 from db.enums import ApiProvider
@@ -96,6 +97,7 @@ def test_key(
     provider: ApiProvider,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
+    _rl: None = Depends(rate_limit_test),
 ) -> ApiKeyTestOut:
     row = db.scalar(select(ApiKey).where(ApiKey.provider == provider))
     if row is None:

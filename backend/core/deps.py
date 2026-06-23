@@ -51,3 +51,22 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
             detail="Admin privileges required",
         )
     return user
+
+
+def get_optional_user(
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """Like get_current_user but returns None instead of raising (for endpoints
+    that also accept a signed URL)."""
+    if creds is None or not creds.credentials:
+        return None
+    payload = decode_access_token(creds.credentials)
+    if payload is None:
+        return None
+    try:
+        user_id = uuid.UUID(payload["sub"])
+    except (KeyError, ValueError):
+        return None
+    user = db.get(User, user_id)
+    return user if user and user.is_active else None

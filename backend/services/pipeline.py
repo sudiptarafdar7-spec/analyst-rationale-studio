@@ -16,6 +16,7 @@ Celery/RQ task later without touching the state-machine logic.
 from __future__ import annotations
 
 import contextlib
+import logging
 import datetime as dt
 import os
 import shutil
@@ -29,6 +30,7 @@ from db.enums import GateKind, JobStatus, StepStatus
 from db.models import Analyst, Job, JobAnalyst, JobStep, UploadedFile
 from db.session import SessionLocal
 from services.progress_hub import hub
+from utils.job_logging import jlog
 from utils.path_utils import resolve_uploaded_file_path
 
 STEP_KEYS = {
@@ -277,6 +279,7 @@ def _pause(db, job, gate: GateKind, next_step: int) -> None:
     job.gate = gate
     job.current_step = next_step
     db.commit()
+    jlog(job.id, next_step - 1, "paused_gate", gate=gate.value, next_step=next_step)
     _emit(job.id, {"type": "gate", "gate": gate.value, "next_step": next_step})
 
 
@@ -290,12 +293,14 @@ def run_pipeline(job_id, start_step: int = 1) -> None:
         job.gate = GateKind.none
         job.error_message = None
         db.commit()
+        jlog(job_id, None, "pipeline_start", start_step=start_step)
 
         for n in range(start_step, LAST_STEP + 1):
             job.current_step = n
             db.commit()
             _emit(job_id, {"type": "step", "step_no": n, "step_key": STEP_KEYS[n], "status": "running"})
             _upsert_step(db, job_id, n, StepStatus.running, started=True)
+            jlog(job_id, n, "step_start", key=STEP_KEYS[n])
 
             try:
                 cfg = effective_config_for(n, job, db)
@@ -311,12 +316,14 @@ def run_pipeline(job_id, start_step: int = 1) -> None:
                 job.status = JobStatus.failed
                 job.error_message = msg
                 db.commit()
+                jlog(job_id, n, "step_failed", level=logging.ERROR, key=STEP_KEYS[n], error=type(exc).__name__)
                 _emit(job_id, {"type": "error", "step_no": n, "message": msg})
                 return
 
             _upsert_step(db, job_id, n, StepStatus.done, log_tail=tee.tail(),
                          output_paths=result.get("output_paths"), finished=True)
             _emit(job_id, {"type": "step", "step_no": n, "step_key": STEP_KEYS[n], "status": "done"})
+            jlog(job_id, n, "step_done", key=STEP_KEYS[n])
 
             if n in GATES:
                 _pause(db, job, GATES[n], next_step=n + 1)
@@ -333,6 +340,7 @@ def run_pipeline(job_id, start_step: int = 1) -> None:
         if last and last.output_paths:
             job.output_pdf_path = last.output_paths.get("pdf")
         db.commit()
+        jlog(job_id, LAST_STEP, "pipeline_completed", pdf=bool(job.output_pdf_path))
         _emit(job_id, {"type": "done", "status": "completed",
                        "pdf_url": f"/api/jobs/{job_id}/pdf" if job.output_pdf_path else None})
 

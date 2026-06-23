@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import ErrorBoundary from "../components/ErrorBoundary";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, LogOut, UserCircle } from "lucide-react";
 import { useAuthStore } from "../store/auth";
@@ -126,7 +127,9 @@ export default function AppShell() {
         </header>
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-6xl px-5 py-8">
-            <Outlet />
+            <ErrorBoundary>
+              <Outlet />
+            </ErrorBoundary>
           </div>
         </main>
       </div>

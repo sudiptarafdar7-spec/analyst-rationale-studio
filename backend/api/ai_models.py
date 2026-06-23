@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from core.rate_limit import rate_limit_test
 from core.deps import require_admin
 from db.enums import AiTask, ApiProvider
 from db.models import AiModel, ModelSettings, ToolConfig, User
@@ -98,6 +99,7 @@ def test_task_model(
     task: AiTask,
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
+    _rl: None = Depends(rate_limit_test),
 ) -> ModelTestOut:
     """Check the task's selected provider + model is reachable with the stored key."""
     row = db.scalar(select(AiModel).where(AiModel.task == task))
