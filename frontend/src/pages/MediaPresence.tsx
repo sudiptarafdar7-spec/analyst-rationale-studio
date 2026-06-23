@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import {
   Check,
   ChevronDown,
@@ -173,6 +174,7 @@ const EMPTY: FormState = {
 
 export default function MediaPresence() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const audioRef = useRef<HTMLInputElement>(null);
 
   const jobs = useQuery({ queryKey: ["jobs"], queryFn: () => api.get<Job[]>("/jobs") });
@@ -259,7 +261,7 @@ export default function MediaPresence() {
   });
   const start = useMutation({
     mutationFn: (id: string) => api.post(`/jobs/${id}/start`),
-    onSuccess: () => { toast.success("Pipeline started"); invalidate(); },
+    onSuccess: (_d, id) => { toast.success("Pipeline started"); invalidate(); navigate(`/ai-rationale/${id}`); },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : "Could not start"),
   });
   const restart = useMutation({

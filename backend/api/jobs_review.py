@@ -204,6 +204,7 @@ async def post_charts(
     df = pd.read_csv(csv_path)
     if "CHART PATH" not in df.columns:
         df["CHART PATH"] = ""
+    df["CHART PATH"] = df["CHART PATH"].astype("object")  # avoid float64 dtype clash on assignment
 
     saved = 0
     for idx, upload in zip(indices, images):
