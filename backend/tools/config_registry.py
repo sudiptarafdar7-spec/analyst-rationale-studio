@@ -72,18 +72,9 @@ _TASK_LABELS = {
 
 
 def _editable_fields(tool: str) -> list[dict]:
-    # Only the system prompt is admin-editable; everything numeric is in code.
-    return [
-        {
-            "name": "system_prompt",
-            "label": "System prompt",
-            "type": "textarea",
-            "default": SYSTEM_PROMPTS[tool],
-            "rows": 12,
-            "help": "Instructions sent to the model for this task. Model tuning "
-            "(temperature, tokens, chunk size) is handled automatically per model.",
-        }
-    ]
+    # Nothing is admin-editable: the system prompt and all numeric tuning live in
+    # Python (SYSTEM_PROMPTS / NUMERIC_DEFAULTS). The admin only selects the model.
+    return []
 
 
 TOOL_SCHEMAS: dict[str, dict] = {
