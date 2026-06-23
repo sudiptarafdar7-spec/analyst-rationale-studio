@@ -134,8 +134,19 @@ function uploadWithProgress(
         });
         return;
       }
-      let detail = "Upload failed";
-      try { const b = JSON.parse(xhr.responseText); detail = typeof b.detail === "string" ? b.detail : detail; } catch { /* ignore */ }
+      let detail = `Upload failed (HTTP ${xhr.status})`;
+      try {
+        const b = JSON.parse(xhr.responseText);
+        if (typeof b.detail === "string") detail = b.detail;
+        else if (Array.isArray(b.detail) && b.detail.length) {
+          detail = b.detail
+            .map((d: { loc?: unknown[]; msg?: string }) => {
+              const field = Array.isArray(d.loc) ? String(d.loc[d.loc.length - 1]) : "";
+              return field ? `${field}: ${d.msg ?? ""}` : d.msg ?? "";
+            })
+            .join("; ");
+        }
+      } catch { /* non-JSON body (e.g. plain "Internal Server Error") */ }
       reject(new ApiError(xhr.status, detail));
     };
     xhr.onerror = () => reject(new ApiError(0, "Network error during upload"));

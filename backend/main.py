@@ -37,10 +37,45 @@ app.add_middleware(
 )
 
 
+def _ensure_db_schema() -> None:
+    """Self-heal the DB schema on boot.
+
+    A code update can add a table (e.g. job_analysts) that an already-running
+    local database doesn't have yet, which otherwise surfaces as opaque 500s.
+    We apply pending Alembic migrations to head; if that can't run for any
+    reason, we fall back to creating only the missing tables. Best-effort —
+    never blocks startup.
+    """
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    try:
+        from alembic import command
+        from alembic.config import Config
+
+        cfg = Config(os.path.join(backend_dir, "alembic.ini"))
+        cfg.set_main_option("script_location", os.path.join(backend_dir, "migrations"))
+        command.upgrade(cfg, "head")
+        print("✅ Database migrations are up to date")
+        return
+    except Exception as exc:  # noqa: BLE001
+        print(f"⚠️  Alembic upgrade skipped/failed ({exc}); ensuring tables via metadata")
+
+    try:
+        from db.base import Base
+        from db.session import engine
+        import db.models  # noqa: F401  (registers tables)
+
+        Base.metadata.create_all(bind=engine)  # creates only missing tables
+        print("✅ Ensured database tables via metadata")
+    except Exception as exc:  # noqa: BLE001
+        print(f"⚠️  Could not ensure DB schema automatically: {exc}")
+
+
 @app.on_event("startup")
-async def _bind_progress_loop() -> None:
-    # Let the progress hub bridge worker-thread publishes onto this event loop.
+async def _on_startup() -> None:
+    # Bridge worker-thread progress publishes onto this event loop.
     hub.bind_loop(asyncio.get_running_loop())
+    # Apply pending migrations so the app self-heals after schema-changing updates.
+    await asyncio.to_thread(_ensure_db_schema)
 
 
 # Routes under /api
