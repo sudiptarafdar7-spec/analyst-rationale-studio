@@ -11,6 +11,7 @@ import Placeholder from "./pages/Placeholder";
 import MediaPresence from "./pages/MediaPresence";
 import AiRationale from "./pages/AiRationale";
 import WorkPage from "./pages/WorkPage";
+import SavedRationale from "./pages/SavedRationale";
 import ManageApiKeys from "./pages/admin/ManageApiKeys";
 import ManagePlatform from "./pages/admin/ManagePlatform";
 import AnalystsProfile from "./pages/admin/AnalystsProfile";
@@ -42,7 +43,7 @@ export default function App() {
           <Route path="/ai-rationale" element={<AiRationale />} />
           <Route path="/ai-rationale/:jobId" element={<WorkPage />} />
           <Route path="/generate-chart" element={<Placeholder title="Generate Chart" phase="Phase 10" />} />
-          <Route path="/saved" element={<Placeholder title="Saved Rationale" phase="Phase 9" />} />
+          <Route path="/saved" element={<SavedRationale />} />
           <Route path="/profile" element={<Profile />} />
 
           {/* Admin-only */}

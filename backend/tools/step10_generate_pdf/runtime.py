@@ -408,7 +408,7 @@ def run(job_folder, overrides=None):
             story.append(Spacer(1, 10))
             list_style = PS("list_style", fontSize=10.8, leading=15.6, spaceAfter=4,
                             alignment=TA_LEFT, leftIndent=25, bulletIndent=15)
-            for fl in create_html_flowables(config["disclaimer_text"], indented_body, list_style=list_style):
+            for fl in create_html_flowables(config["disclaimer_text"], indented_body):
                 story.append(fl)
             story.append(Spacer(1, 35))
 
@@ -417,7 +417,7 @@ def run(job_folder, overrides=None):
             story.append(Spacer(1, 10))
             list_style = PS("list_style2", fontSize=10.8, leading=15.6, spaceAfter=4,
                             alignment=TA_LEFT, leftIndent=25, bulletIndent=15)
-            for fl in create_html_flowables(config["disclosure_text"], indented_body, list_style=list_style):
+            for fl in create_html_flowables(config["disclosure_text"], indented_body):
                 story.append(fl)
             story.append(Spacer(1, 35))
 
