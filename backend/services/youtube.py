@@ -1,15 +1,12 @@
 """YouTube Data API v3 helpers.
 
 Resolves a YouTube URL (channel, handle, custom/user, or a video link) to the
-owning channel's title + avatar thumbnail, and resolves a video URL to its
-metadata (channel, IST upload date/time, title). Uses the admin-managed
-`youtube` API key (decrypted from the api_keys table).
+owning channel's title + avatar thumbnail. Uses the admin-managed `youtube`
+API key (decrypted from the api_keys table).
 """
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import HTTPException, status
@@ -18,7 +15,6 @@ from utils.database import get_api_key
 
 _API = "https://www.googleapis.com/youtube/v3"
 _TIMEOUT = 12.0
-_IST = ZoneInfo("Asia/Kolkata")
 
 
 def _key() -> str:
@@ -45,7 +41,7 @@ def _get(path: str, params: dict) -> dict:
 
 
 def _extract(url: str) -> tuple[str, str]:
-    """Return (kind, value) where kind in {channel_id, handle, username, custom, video}."""
+    """Return (kind, value) where kind ∈ {channel_id, handle, username, custom, video}."""
     u = url.strip()
     # Bare handle
     if u.startswith("@"):
@@ -123,45 +119,4 @@ def resolve_channel(url: str) -> dict:
         "title": snip.get("title", ""),
         "thumbnail_url": thumb,
         "channel_url": channel_url,
-    }
-
-
-def _video_id(url: str) -> str:
-    """Extract an 11-char video id, accepting a bare id too."""
-    kind, value = _extract(url)
-    if kind == "video":
-        return value
-    u = url.strip()
-    if re.fullmatch(r"[\w-]{11}", u):
-        return u
-    raise HTTPException(status_code=400, detail="That URL does not point to a YouTube video.")
-
-
-def video_metadata(url: str) -> dict:
-    """Resolve a YouTube video URL to its metadata.
-
-    Returns {channel, upload_date (YYYY-MM-DD, IST), upload_time (HH:MM:SS, IST),
-    title, video_id}. publishedAt is UTC; we convert to Asia/Kolkata and split.
-    """
-    vid = _video_id(url)
-    data = _get("videos", {"part": "snippet", "id": vid})
-    items = data.get("items", [])
-    if not items:
-        raise HTTPException(status_code=404, detail="Video not found")
-    snip = items[0]["snippet"]
-
-    published_at = snip.get("publishedAt")  # e.g. "2024-05-01T07:30:00Z"
-    upload_date = upload_time = None
-    if published_at:
-        dt_utc = datetime.fromisoformat(published_at.replace("Z", "+00:00")).astimezone(timezone.utc)
-        dt_ist = dt_utc.astimezone(_IST)
-        upload_date = dt_ist.strftime("%Y-%m-%d")
-        upload_time = dt_ist.strftime("%H:%M:%S")
-
-    return {
-        "video_id": vid,
-        "channel": snip.get("channelTitle", ""),
-        "title": snip.get("title", ""),
-        "upload_date": upload_date,
-        "upload_time": upload_time,
     }
