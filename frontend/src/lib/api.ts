@@ -99,6 +99,14 @@ export const api = {
   postForm: <T>(path: string, formData: FormData) => request<T>(path, { method: "POST", formData }),
   patchForm: <T>(path: string, formData: FormData) => request<T>(path, { method: "PATCH", formData }),
   /** Fetch a binary resource (e.g. audio/pdf) with the bearer token attached. */
+  /** Force a token refresh (used by the XHR upload path which can't auto-retry). */
+  refresh: async (): Promise<string | null> => {
+    if (!refreshing) refreshing = doRefresh().finally(() => (refreshing = null));
+    const t = await refreshing;
+    if (t) useAuthStore.getState().setAccessToken(t);
+    else useAuthStore.getState().reset();
+    return t;
+  },
   getBlob: async (path: string): Promise<Blob> => {
     const token = useAuthStore.getState().accessToken;
     const res = await fetch(`${BASE}${path}`, {

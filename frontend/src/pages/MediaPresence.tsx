@@ -20,6 +20,7 @@ import {
   Sparkles,
   Trash2,
   Users,
+  X,
   Youtube,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -106,21 +107,36 @@ function fmtDateTime(d: string | null, t: string | null): string {
   });
 }
 
-function uploadWithProgress(path: string, fd: FormData, onProgress: (pct: number) => void): Promise<unknown> {
+function uploadWithProgress(
+  path: string,
+  fd: FormData,
+  onProgress: (pct: number) => void,
+  token?: string,
+  allowRetry = true,
+): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/api${path}`);
-    const token = useAuthStore.getState().accessToken;
-    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    const tk = token ?? useAuthStore.getState().accessToken;
+    if (tk) xhr.setRequestHeader("Authorization", `Bearer ${tk}`);
     xhr.withCredentials = true;
     xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
     xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.responseText ? JSON.parse(xhr.responseText) : null);
-      else {
-        let detail = "Upload failed";
-        try { const b = JSON.parse(xhr.responseText); detail = typeof b.detail === "string" ? b.detail : detail; } catch { /* ignore */ }
-        reject(new ApiError(xhr.status, detail));
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(xhr.responseText ? JSON.parse(xhr.responseText) : null);
+        return;
       }
+      // Token likely expired mid-upload — refresh once and retry (FormData is reusable).
+      if (xhr.status === 401 && allowRetry) {
+        api.refresh().then((nt) => {
+          if (nt) resolve(uploadWithProgress(path, fd, onProgress, nt, false));
+          else reject(new ApiError(401, "Your session has expired. Please sign in again."));
+        });
+        return;
+      }
+      let detail = "Upload failed";
+      try { const b = JSON.parse(xhr.responseText); detail = typeof b.detail === "string" ? b.detail : detail; } catch { /* ignore */ }
+      reject(new ApiError(xhr.status, detail));
     };
     xhr.onerror = () => reject(new ApiError(0, "Network error during upload"));
     xhr.send(fd);
@@ -160,6 +176,7 @@ export default function MediaPresence() {
   const [confirmDel, setConfirmDel] = useState<Job | null>(null);
   const [playing, setPlaying] = useState<Job | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [analystOpen, setAnalystOpen] = useState(false);
   const isEdit = Boolean(form.id);
   const invalidate = () => qc.invalidateQueries({ queryKey: ["jobs"] });
 
@@ -494,22 +511,58 @@ export default function MediaPresence() {
             <div>
               <label className="label">Target analysts <span className="text-slate-400">(select one or more)</span></label>
               {analysts.data && analysts.data.length > 0 ? (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {analysts.data.map((a) => {
-                    const on = form.analyst_ids.includes(a.id);
-                    return (
-                      <button key={a.id} type="button" onClick={() => toggleAnalyst(a.id)}
-                        className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm transition ${on ? "border-brand bg-brand-50 ring-2 ring-brand/20" : "border-slate-200 hover:border-slate-300"}`}>
-                        {a.avatar_path ? (
-                          <img src={a.avatar_path} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-slate-200" />
-                        ) : (
-                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500">{a.name[0]?.toUpperCase() ?? "?"}</span>
-                        )}
-                        <span className="truncate font-medium text-slate-700">{a.name}</span>
-                        {on && <Check size={16} className="ml-auto text-brand" />}
-                      </button>
-                    );
-                  })}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                  <div className="relative sm:w-60 sm:shrink-0">
+                    <button type="button" onClick={() => setAnalystOpen((o) => !o)} className="input flex items-center justify-between gap-2 text-left">
+                      <span className="text-slate-400">Add analyst…</span>
+                      <ChevronDown size={16} className="shrink-0 text-slate-400" />
+                    </button>
+                    {analystOpen && (
+                      <>
+                        <button className="fixed inset-0 z-10 cursor-default" onClick={() => setAnalystOpen(false)} aria-hidden tabIndex={-1} />
+                        <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                          {analysts.data.filter((a) => !form.analyst_ids.includes(a.id)).length === 0 ? (
+                            <div className="px-3 py-2 text-sm text-slate-400">All analysts selected.</div>
+                          ) : (
+                            analysts.data
+                              .filter((a) => !form.analyst_ids.includes(a.id))
+                              .map((a) => (
+                                <button key={a.id} type="button" onClick={() => { toggleAnalyst(a.id); setAnalystOpen(false); }}
+                                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50">
+                                  {a.avatar_path ? (
+                                    <img src={a.avatar_path} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover ring-1 ring-slate-200" />
+                                  ) : (
+                                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500">{a.name[0]?.toUpperCase() ?? "?"}</span>
+                                  )}
+                                  <span className="truncate text-slate-700">{a.name}</span>
+                                </button>
+                              ))
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex flex-1 flex-wrap gap-2">
+                    {form.analyst_ids.length === 0 ? (
+                      <span className="self-center text-sm text-slate-400">No analysts selected yet.</span>
+                    ) : (
+                      form.analyst_ids.map((id) => {
+                        const a = analysts.data!.find((x) => x.id === id);
+                        if (!a) return null;
+                        return (
+                          <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand-50 py-1 pl-1 pr-2 text-sm">
+                            {a.avatar_path ? (
+                              <img src={a.avatar_path} alt="" className="h-6 w-6 rounded-full object-cover" />
+                            ) : (
+                              <span className="grid h-6 w-6 place-items-center rounded-full bg-white text-[10px] font-semibold text-slate-500">{a.name[0]?.toUpperCase() ?? "?"}</span>
+                            )}
+                            <span className="font-medium text-slate-700">{a.name}</span>
+                            <button type="button" onClick={() => toggleAnalyst(id)} className="text-slate-400 hover:text-danger" aria-label={`Remove ${a.name}`}><X size={14} /></button>
+                          </span>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               ) : (
                 <p className="flex items-center gap-2 text-sm text-slate-400"><Users size={14} /> No analysts yet — add them under Analysts Profile.</p>
