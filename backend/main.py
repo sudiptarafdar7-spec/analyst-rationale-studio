@@ -1,6 +1,7 @@
 """FastAPI application entrypoint for Analyst Rationale Studio."""
 from __future__ import annotations
 
+import asyncio
 import os
 
 from fastapi import FastAPI
@@ -14,12 +15,15 @@ from api.auth import router as auth_router
 from api.files import router as files_router
 from api.health import router as health_router
 from api.jobs import router as jobs_router
+from api.jobs_pipeline import router as jobs_pipeline_router
+from api.jobs_pipeline import ws_router
 from api.pdf_template import router as pdf_template_router
 from api.platforms import router as platforms_router
 from api.tools import router as tools_router
 from api.users import router as users_router
 from api.youtube import router as youtube_router
 from core.config import settings
+from services.progress_hub import hub
 
 app = FastAPI(title="Analyst Rationale Studio API", version="0.1.0")
 
@@ -30,6 +34,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def _bind_progress_loop() -> None:
+    # Let the progress hub bridge worker-thread publishes onto this event loop.
+    hub.bind_loop(asyncio.get_running_loop())
+
 
 # Routes under /api
 app.include_router(health_router, prefix="/api")
@@ -44,6 +55,8 @@ app.include_router(ai_models_router, prefix="/api")
 app.include_router(youtube_router, prefix="/api")
 app.include_router(tools_router, prefix="/api")
 app.include_router(jobs_router, prefix="/api")
+app.include_router(jobs_pipeline_router, prefix="/api")
+app.include_router(ws_router)  # WS /ws/jobs/{id} (no /api prefix)
 
 # Serve uploaded files (avatars, logos, ...) from the upload dir.
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)

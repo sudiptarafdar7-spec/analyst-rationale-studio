@@ -1,0 +1,353 @@
+"""Rationale pipeline orchestrator (docs/05).
+
+Drives the 10 steps for one job: runs each tool, persists a `job_steps` row,
+streams emoji logs to the progress hub, and halts at the review gates
+(extract_review after 4, mapping_review after 7, conditional chart_upload in 9).
+Runs in a worker thread via FastAPI BackgroundTasks; owns its own DB session.
+
+Steps are dispatched through STEP_ADAPTERS (module-level) so the state machine
+can be exercised in isolation. Each adapter does the file IO around a tool's
+run() and returns a small result dict.
+"""
+from __future__ import annotations
+
+import contextlib
+import datetime as dt
+import os
+import shutil
+import sys
+import traceback
+
+from sqlalchemy import delete, select
+
+from core.config import settings
+from db.enums import GateKind, JobStatus, StepStatus
+from db.models import Analyst, Job, JobStep, UploadedFile
+from db.session import SessionLocal
+from services.progress_hub import hub
+from utils.path_utils import resolve_uploaded_file_path
+
+STEP_KEYS = {
+    1: "transcribe", 2: "translate", 3: "speaker_detect", 4: "extract",
+    5: "convert_csv", 6: "polish", 7: "map_master", 8: "fetch_cmp",
+    9: "generate_charts", 10: "generate_pdf",
+}
+GATES = {4: GateKind.extract_review, 7: GateKind.mapping_review}
+LAST_STEP = 10
+
+
+# --------------------------------------------------------------------------- #
+# Helpers
+# --------------------------------------------------------------------------- #
+def job_folder(job_id) -> str:
+    return os.path.join(settings.JOB_FILES_DIR, str(job_id))
+
+
+def _analyst_overrides(job: Job, db) -> dict:
+    """Target-analyst context for the AI steps.
+
+    When extract_all_stocks is set, targeting is disabled (empty name/aliases)
+    so every analyst's calls are extracted.
+    """
+    if job.extract_all_stocks or not job.analyst_id:
+        return {"target_analyst_name": "", "aliases": ""}
+    analyst = db.get(Analyst, job.analyst_id)
+    if not analyst:
+        return {"target_analyst_name": "", "aliases": ""}
+    return {"target_analyst_name": analyst.name or "", "aliases": analyst.aliases or ""}
+
+
+def _call_date(job: Job) -> str:
+    return job.video_date.isoformat() if job.video_date else ""
+
+
+def _call_time(job: Job) -> str:
+    return job.video_time.strftime("%H:%M:%S") if job.video_time else "15:30:00"
+
+
+def _emit(job_id, event: dict) -> None:
+    hub.publish(job_id, event)
+
+
+class _Tee:
+    """Tee stdout: mirror to the real stream and stream lines as log events."""
+
+    def __init__(self, job_id, step_no: int, real):
+        self.job_id, self.step_no, self.real = job_id, step_no, real
+        self._buf = ""
+        self.lines: list[str] = []
+
+    def write(self, s: str) -> int:
+        self.real.write(s)
+        self._buf += s
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            if line.strip():
+                self.lines.append(line)
+                _emit(self.job_id, {"type": "log", "step_no": self.step_no, "line": line})
+        return len(s)
+
+    def flush(self) -> None:
+        self.real.flush()
+
+    def tail(self, n: int = 40) -> str:
+        return "\n".join(self.lines[-n:])
+
+
+@contextlib.contextmanager
+def _capture(job_id, step_no: int):
+    tee = _Tee(job_id, step_no, sys.stdout)
+    old = sys.stdout
+    sys.stdout = tee
+    try:
+        yield tee
+    finally:
+        sys.stdout = old
+
+
+def _upsert_step(db, job_id, step_no, status, *, log_tail=None, error=None,
+                 output_paths=None, started=False, finished=False) -> None:
+    row = db.scalar(select(JobStep).where(JobStep.job_id == job_id, JobStep.step_no == step_no))
+    if row is None:
+        row = JobStep(job_id=job_id, step_no=step_no, step_key=STEP_KEYS[step_no], status=status)
+        db.add(row)
+    row.status = status
+    row.step_key = STEP_KEYS[step_no]
+    if log_tail is not None:
+        row.log_tail = log_tail
+    if error is not None:
+        row.error = error
+    if output_paths is not None:
+        row.output_paths = output_paths
+    if started:
+        row.started_at = dt.datetime.now(dt.timezone.utc)
+        row.error = None
+    if finished:
+        row.finished_at = dt.datetime.now(dt.timezone.utc)
+    db.commit()
+
+
+# --------------------------------------------------------------------------- #
+# Step adapters — each: (job, db) -> result dict
+# --------------------------------------------------------------------------- #
+def _read(path: str) -> str:
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def _write(path: str, text: str) -> None:
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+
+
+def _step_transcribe(job, db) -> dict:
+    from tools.step01_transcribe import runtime as t
+    if not job.audio_file_id:
+        raise RuntimeError("No audio uploaded for this job.")
+    uf = db.get(UploadedFile, job.audio_file_id)
+    audio_path = resolve_uploaded_file_path(uf.file_path) if uf else None
+    if not audio_path or not os.path.exists(audio_path):
+        raise RuntimeError("Audio file is missing on disk.")
+    t.run(str(job.id), audio_path)
+    return {"output_paths": {"transcript": os.path.join(job_folder(job.id), "transcripts", "transcript.txt")}}
+
+
+def _step_translate(job, db) -> dict:
+    from tools.step02_translate import runtime as t
+    jf = job_folder(job.id)
+    src = os.path.join(jf, "transcripts", "transcript.txt")
+    res = t.run(text=_read(src))
+    if not res.get("success"):
+        raise RuntimeError(res.get("error") or "Translation failed")
+    out = os.path.join(jf, "translated.txt")
+    _write(out, res["text"])
+    return {"output_paths": {"translated": out}, "skipped": res.get("skipped", False)}
+
+
+def _step_speakers(job, db) -> dict:
+    from tools.step03_detect_speakers import runtime as t
+    jf = job_folder(job.id)
+    res = t.run(_read(os.path.join(jf, "translated.txt")), overrides=_analyst_overrides(job, db))
+    if not res.get("success"):
+        raise RuntimeError(res.get("error") or "Speaker detection failed")
+    out = os.path.join(jf, "speakers.txt")
+    _write(out, res["text"])
+    return {"output_paths": {"speakers": out}}
+
+
+def _step_extract(job, db) -> dict:
+    from tools.step04_extract_analysis import runtime as t
+    jf = job_folder(job.id)
+    res = t.run(_read(os.path.join(jf, "speakers.txt")), overrides=_analyst_overrides(job, db))
+    if not res.get("success"):
+        raise RuntimeError(res.get("error") or "Extraction failed")
+    extracted = res["arranged_text"]
+    _write(os.path.join(jf, "extracted.txt"), extracted)
+    # Default the Step-5 input; the review gate may overwrite this on submit.
+    _write(os.path.join(jf, "bulk-input-english.txt"), extracted)
+    return {"output_paths": {"extracted": os.path.join(jf, "extracted.txt")}}
+
+
+def _step_convert_csv(job, db) -> dict:
+    from tools.step05_convert_csv import runtime as t
+    res = t.run(job_folder(job.id), _call_date(job), _call_time(job))
+    if not res.get("success"):
+        raise RuntimeError(res.get("error") or "CSV conversion failed")
+    return {"output_paths": {"bulk_input": res.get("output_file")}}
+
+
+def _step_polish(job, db) -> dict:
+    from tools.step06_polish import runtime as t
+    res = t.run(job_folder(job.id))
+    if not res.get("success"):
+        raise RuntimeError(res.get("error") or "Polish failed")
+    return {"output_paths": {"polished": res.get("output_file")}}
+
+
+def _step_map_master(job, db) -> dict:
+    from tools.step07_map_master import runtime as t
+    res = t.run(job_folder(job.id))
+    if not res.get("success"):
+        raise RuntimeError(res.get("error") or "Master mapping failed")
+    return {"output_paths": {"mapped": res.get("output_file")}}
+
+
+def _step_fetch_cmp(job, db) -> dict:
+    from tools.step08_fetch_cmp import runtime as t
+    res = t.run(job_folder(job.id))
+    if not res.get("success"):
+        raise RuntimeError(res.get("error") or "CMP fetch failed")
+    return {"output_paths": {"cmp": res.get("output_file")}}
+
+
+def _step_charts(job, db) -> dict:
+    from tools.step09_generate_charts import runtime as t
+    res = t.run(job_folder(job.id), _call_date(job), _call_time(job))
+    if not res.get("success"):
+        raise RuntimeError(res.get("error") or "Chart generation failed")
+    return {"output_paths": {"charts": res.get("output_file")},
+            "failed_count": int(res.get("failed_count", 0))}
+
+
+def _step_pdf(job, db) -> dict:
+    from tools.step10_generate_pdf import runtime as t
+    res = t.run(job_folder(job.id))
+    if not res.get("success"):
+        raise RuntimeError(res.get("error") or "PDF generation failed")
+    return {"output_paths": {"pdf": res.get("output_file")}, "output_file": res.get("output_file")}
+
+
+STEP_ADAPTERS = {
+    1: _step_transcribe, 2: _step_translate, 3: _step_speakers, 4: _step_extract,
+    5: _step_convert_csv, 6: _step_polish, 7: _step_map_master, 8: _step_fetch_cmp,
+    9: _step_charts, 10: _step_pdf,
+}
+
+
+# --------------------------------------------------------------------------- #
+# State machine
+# --------------------------------------------------------------------------- #
+def _pause(db, job, gate: GateKind, next_step: int) -> None:
+    job.status = JobStatus.paused_review
+    job.gate = gate
+    job.current_step = next_step
+    db.commit()
+    _emit(job.id, {"type": "gate", "gate": gate.value, "next_step": next_step})
+
+
+def run_pipeline(job_id, start_step: int = 1) -> None:
+    """Run steps start_step..10, persisting progress and halting at gates."""
+    with SessionLocal() as db:
+        job = db.get(Job, job_id)
+        if job is None:
+            return
+        job.status = JobStatus.running
+        job.gate = GateKind.none
+        job.error_message = None
+        db.commit()
+
+        for n in range(start_step, LAST_STEP + 1):
+            job.current_step = n
+            db.commit()
+            _emit(job_id, {"type": "step", "step_no": n, "step_key": STEP_KEYS[n], "status": "running"})
+            _upsert_step(db, job_id, n, StepStatus.running, started=True)
+
+            try:
+                with _capture(job_id, n) as tee:
+                    result = STEP_ADAPTERS[n](job, db)
+                db.refresh(job)
+            except Exception as exc:  # noqa: BLE001
+                tail = locals().get("tee").tail() if locals().get("tee") else ""
+                msg = f"{type(exc).__name__}: {exc}"
+                traceback.print_exc()
+                db.refresh(job)
+                _upsert_step(db, job_id, n, StepStatus.failed, log_tail=tail, error=msg, finished=True)
+                job.status = JobStatus.failed
+                job.error_message = msg
+                db.commit()
+                _emit(job_id, {"type": "error", "step_no": n, "message": msg})
+                return
+
+            _upsert_step(db, job_id, n, StepStatus.done, log_tail=tee.tail(),
+                         output_paths=result.get("output_paths"), finished=True)
+            _emit(job_id, {"type": "step", "step_no": n, "step_key": STEP_KEYS[n], "status": "done"})
+
+            if n in GATES:
+                _pause(db, job, GATES[n], next_step=n + 1)
+                return
+            if n == 9 and result.get("failed_count", 0) > 0:
+                _pause(db, job, GateKind.chart_upload, next_step=10)
+                return
+
+        # All steps complete.
+        job.status = JobStatus.completed
+        job.gate = GateKind.none
+        job.current_step = LAST_STEP
+        last = db.scalar(select(JobStep).where(JobStep.job_id == job_id, JobStep.step_no == LAST_STEP))
+        if last and last.output_paths:
+            job.output_pdf_path = last.output_paths.get("pdf")
+        db.commit()
+        _emit(job_id, {"type": "done", "status": "completed",
+                       "pdf_url": f"/api/jobs/{job_id}/pdf" if job.output_pdf_path else None})
+
+
+def resume(job_id) -> None:
+    """Continue after a gate submission (current_step holds the next step)."""
+    with SessionLocal() as db:
+        job = db.get(Job, job_id)
+        if job is None:
+            return
+        start = max(1, job.current_step or 1)
+    run_pipeline(job_id, start_step=start)
+
+
+def restart(job_id) -> None:
+    """Clear all steps + derived artifacts and run from Step 1 (keeps audio)."""
+    with SessionLocal() as db:
+        job = db.get(Job, job_id)
+        if job is None:
+            return
+        db.execute(delete(JobStep).where(JobStep.job_id == job_id))
+        job.status = JobStatus.pending
+        job.gate = GateKind.none
+        job.current_step = 0
+        job.error_message = None
+        job.output_pdf_path = None
+        db.commit()
+    # Wipe derived artifacts (transcripts/, analysis/, charts/, pdf/, *.txt) but keep audio.
+    jf = job_folder(job_id)
+    for name in ("transcripts", "analysis", "charts", "pdf"):
+        shutil.rmtree(os.path.join(jf, name), ignore_errors=True)
+    if os.path.isdir(jf):
+        for fn in os.listdir(jf):
+            if fn.endswith(".txt"):
+                with contextlib.suppress(OSError):
+                    os.remove(os.path.join(jf, fn))
+    hub.clear(job_id)
+    run_pipeline(job_id, start_step=1)
+
+
+def retry_step(job_id, step_no: int) -> None:
+    """Re-run the pipeline from a specific step (idempotent overwrite)."""
+    run_pipeline(job_id, start_step=max(1, int(step_no)))
