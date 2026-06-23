@@ -51,3 +51,10 @@ class ToolConfigOut(BaseModel):
 
 class ToolConfigUpdate(BaseModel):
     config: dict[str, Any]
+
+
+class ModelTestOut(BaseModel):
+    ok: bool
+    message: str
+    provider: str
+    model: str

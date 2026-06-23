@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
-import { BarChart3, ChevronDown, Loader2, RotateCcw, Save, Settings2 } from "lucide-react";
+import { BarChart3, ChevronDown, Loader2, RotateCcw, Save, Settings2, Zap } from "lucide-react";
 import { api, ApiError } from "../../lib/api";
 import { toast } from "../../store/toast";
 
@@ -99,6 +99,7 @@ function AdvancedConfig({ tool }: { tool: string }) {
 
   return (
     <div className="space-y-4 border-t border-slate-100 pt-4">
+      {data.fields.some((f) => f.type === "number") && (
       <div className="grid gap-4 sm:grid-cols-3">
         {data.fields
           .filter((f) => f.type === "number")
@@ -118,6 +119,7 @@ function AdvancedConfig({ tool }: { tool: string }) {
             </div>
           ))}
       </div>
+      )}
 
       {data.fields
         .filter((f) => f.type === "text")
@@ -184,6 +186,12 @@ function TaskCard({ mapping, catalog }: { mapping: ModelMapping; catalog: Record
     onError: (e) => toast.error(e instanceof ApiError ? e.message : "Could not save model"),
   });
 
+  const test = useMutation({
+    mutationFn: () => api.post<{ ok: boolean; message: string }>(`/admin/ai-models/${mapping.task}/test`),
+    onSuccess: (res) => (res.ok ? toast.success(res.message) : toast.error(res.message)),
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : "Test failed"),
+  });
+
   return (
     <div className="card p-5">
       <div className="flex flex-wrap items-end gap-3">
@@ -245,6 +253,10 @@ function TaskCard({ mapping, catalog }: { mapping: ModelMapping; catalog: Record
             );
           })()}
         </div>
+        <button className="btn-ghost" onClick={() => test.mutate()} disabled={test.isPending} title="Check this model is reachable with the stored key">
+          {test.isPending ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
+          Test
+        </button>
         <button className="btn-primary" onClick={() => save.mutate()} disabled={!modelName.trim() || save.isPending}>
           {save.isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
           Save

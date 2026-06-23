@@ -15,9 +15,12 @@ from schemas.ai_models import (
     AiModelUpdate,
     ModelSettingsOut,
     ModelSettingsUpdate,
+    ModelTestOut,
     ToolConfigOut,
     ToolConfigUpdate,
 )
+from services.model_test import test_model
+from utils.database import get_api_key
 from tools.config_registry import (
     AI_PROVIDERS,
     MODEL_CATALOG,
@@ -88,6 +91,28 @@ def update_ai_model(
     db.commit()
     db.refresh(row)
     return AiModelMapping(task=row.task, provider=row.provider, model_name=row.model_name, tool=TASK_TOOL[task.value])
+
+
+@router.post("/ai-models/{task}/test", response_model=ModelTestOut)
+def test_task_model(
+    task: AiTask,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> ModelTestOut:
+    """Check the task's selected provider + model is reachable with the stored key."""
+    row = db.scalar(select(AiModel).where(AiModel.task == task))
+    provider = row.provider.value if row else "openai"
+    model = row.model_name if row else GLOBAL_MODEL_SENTINEL
+    if model == GLOBAL_MODEL_SENTINEL:
+        model = _settings_row(db).global_model
+    key = get_api_key(provider)
+    if not key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No API key configured for {provider}. Add it under Manage API Keys.",
+        )
+    ok, message = test_model(provider, model, key)
+    return ModelTestOut(ok=ok, message=message, provider=provider, model=model)
 
 
 # --- global / advanced fallback model --------------------------------------

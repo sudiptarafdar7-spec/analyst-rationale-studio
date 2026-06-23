@@ -1,9 +1,11 @@
 """Tool config registry for the admin "Manage AI Models" screen.
 
-Each selectable AI task maps to a pipeline tool. Every tool exposes a
-DEFAULT_CONFIG and a CONFIG_JSON_SCHEMA (field descriptors the admin UI renders
-a form from). The Phase-4 pipeline tools will read their effective config from
-here (DEFAULT_CONFIG ⊕ tool_configs DB row ⊕ per-job overrides), per docs/06 §1.
+The admin only chooses a provider + model and (optionally) edits the system
+prompt. All model-dependent numeric tuning (temperature, max output tokens,
+chunk size, overlap, inter-chunk sleep) lives in Python — NUMERIC_DEFAULTS —
+because the right values differ per model and are decided in code. Phase-4
+pipeline tools read the full effective config via get_effective_config:
+DEFAULT_CONFIG (NUMERIC_DEFAULTS + system prompt) ⊕ tool_configs row ⊕ overrides.
 """
 from __future__ import annotations
 
@@ -20,127 +22,83 @@ TASK_TOOL: dict[str, str] = {
     AiTask.polish.value: "polish",
 }
 
+# Python-side numeric defaults consumed by the pipeline tools. NOT admin-editable
+# (they are model-dependent and managed in code / per model in Phase 4).
+NUMERIC_DEFAULTS: dict[str, dict] = {
+    "translator": {"temperature": 0.0, "max_output_tokens": 8192, "chunk_chars": 6000},
+    "speaker_detector": {"temperature": 0.0, "max_output_tokens": 8192, "chunk_chars": 6000},
+    "extract_stocks_analysis": {
+        "temperature": 0.0,
+        "max_output_tokens": 8192,
+        "chunk_chars": 6000,
+        "overlap_lines": 8,
+        "inter_chunk_sleep_secs": 2,
+    },
+    "polish": {"temperature": 0.0, "max_output_tokens": 8192, "chunk_chars": 6000},
+}
 
-def _common_fields(system_prompt: str) -> list[dict]:
+# Default system prompt per tool (admin-editable).
+SYSTEM_PROMPTS: dict[str, str] = {
+    "translator": (
+        "Translate the following transcript to English faithfully. Preserve every "
+        "[Speaker N] [HH:MM:SS - HH:MM:SS] prefix exactly. Do not summarise, omit, or "
+        "reorder anything. Keep spoken numbers as-is (digit conversion happens later)."
+    ),
+    "speaker_detector": (
+        "Re-label each utterance with the speaker's role and name. Mark the target "
+        "analyst as Analyst (<target>). The host asks about stocks; other analysts are "
+        "from different firms. Detect refusals. Output the speaker-labelled transcript."
+    ),
+    "extract_stocks_analysis": (
+        "Extract ONLY the target analyst's stock calls in strict pairs:\n\nSTOCK NAME\n"
+        "analysis text...\n\nNEXT STOCK\nanalysis text...\n\nWhen the host names a stock and "
+        "the target analyst answers without naming it, attach that stock name. Group all "
+        "of the analyst's aliases to one speaker. Ignore other analysts."
+    ),
+    "polish": (
+        "Professionalise each stock's analysis. Start with \"For {stock}, …\". Use the ₹ "
+        "symbol, convert spoken numbers to digits, write at least 100 words, no first "
+        "person, no speaker names. NEVER change numeric levels. When multiple stocks are "
+        "mentioned, keep only the current stock's levels."
+    ),
+}
+
+_TASK_LABELS = {
+    "translator": "Translate → English",
+    "speaker_detector": "Detect Speakers",
+    "extract_stocks_analysis": "Extract Analysis",
+    "polish": "Polish Analysis",
+}
+
+
+def _editable_fields(tool: str) -> list[dict]:
+    # Only the system prompt is admin-editable; everything numeric is in code.
     return [
-        {
-            "name": "temperature",
-            "label": "Temperature",
-            "type": "number",
-            "default": 0.0,
-            "min": 0,
-            "max": 2,
-            "step": 0.1,
-            "help": "Lower = more deterministic. 0 is best for extraction tasks.",
-        },
-        {
-            "name": "max_output_tokens",
-            "label": "Max output tokens",
-            "type": "number",
-            "default": 8192,
-            "min": 256,
-            "max": 32000,
-            "step": 256,
-            "help": "Upper bound on the model's response length.",
-        },
-        {
-            "name": "chunk_chars",
-            "label": "Chunk size (characters)",
-            "type": "number",
-            "default": 6000,
-            "min": 1000,
-            "max": 40000,
-            "step": 500,
-            "help": "Transcript is split into chunks of this size before sending to the model.",
-        },
         {
             "name": "system_prompt",
             "label": "System prompt",
             "type": "textarea",
-            "default": system_prompt,
+            "default": SYSTEM_PROMPTS[tool],
             "rows": 12,
-            "help": "Instructions sent to the model for this task.",
-        },
+            "help": "Instructions sent to the model for this task. Model tuning "
+            "(temperature, tokens, chunk size) is handled automatically per model.",
+        }
     ]
 
 
-# --- Per-tool schemas -------------------------------------------------------
 TOOL_SCHEMAS: dict[str, dict] = {
-    "translator": {
-        "label": "Translate → English",
-        "task": AiTask.translate.value,
-        "fields": _common_fields(
-            "Translate the following transcript to English faithfully. Preserve every "
-            "[Speaker N] [HH:MM:SS - HH:MM:SS] prefix exactly. Do not summarise, omit, or "
-            "reorder anything. Keep spoken numbers as-is (digit conversion happens later)."
-        ),
-    },
-    "speaker_detector": {
-        "label": "Detect Speakers",
-        "task": AiTask.speaker_detect.value,
-        "fields": _common_fields(
-            "Re-label each utterance with the speaker's role and name. Mark the target "
-            "analyst as Analyst (<target>). The host asks about stocks; other analysts are "
-            "from different firms. Detect refusals. Output the speaker-labelled transcript."
-        )
-        + [
-            {
-                "name": "target_analyst_name",
-                "label": "Default target analyst",
-                "type": "text",
-                "default": "",
-                "help": "Usually filled per-job from the selected analyst; this is a fallback.",
-            },
-        ],
-    },
-    "extract_stocks_analysis": {
-        "label": "Extract Analysis",
-        "task": AiTask.extract.value,
-        "fields": _common_fields(
-            "Extract ONLY the target analyst's stock calls in strict pairs:\n\nSTOCK NAME\n"
-            "analysis text...\n\nNEXT STOCK\nanalysis text...\n\nWhen the host names a stock and "
-            "the target analyst answers without naming it, attach that stock name. Group all "
-            "of the analyst's aliases to one speaker. Ignore other analysts."
-        )
-        + [
-            {
-                "name": "overlap_lines",
-                "label": "Chunk overlap (lines)",
-                "type": "number",
-                "default": 8,
-                "min": 0,
-                "max": 50,
-                "step": 1,
-                "help": "Lines repeated between chunks so calls spanning a boundary aren't lost.",
-            },
-            {
-                "name": "inter_chunk_sleep_secs",
-                "label": "Sleep between chunks (s)",
-                "type": "number",
-                "default": 2,
-                "min": 0,
-                "max": 60,
-                "step": 1,
-                "help": "Pause between chunk requests to respect provider rate limits.",
-            },
-        ],
-    },
-    "polish": {
-        "label": "Polish Analysis",
-        "task": AiTask.polish.value,
-        "fields": _common_fields(
-            "Professionalise each stock's analysis. Start with \"For {stock}, …\". Use the ₹ "
-            "symbol, convert spoken numbers to digits, write at least 100 words, no first "
-            "person, no speaker names. NEVER change numeric levels. When multiple stocks are "
-            "mentioned, keep only the current stock's levels."
-        ),
-    },
+    tool: {
+        "label": _TASK_LABELS[tool],
+        "task": next(t for t, x in TASK_TOOL.items() if x == tool),
+        "fields": _editable_fields(tool),
+    }
+    for tool in TASK_TOOL.values()
 }
 
 
 def default_config(tool: str) -> dict:
-    fields = TOOL_SCHEMAS[tool]["fields"]
-    return {f["name"]: f["default"] for f in fields}
+    """Full config the pipeline tools consume: numeric defaults + system prompt."""
+    return {**NUMERIC_DEFAULTS.get(tool, {}), "system_prompt": SYSTEM_PROMPTS[tool]}
 
 
 def get_effective_config(tool: str, db_config: dict | None = None, overrides: dict | None = None) -> dict:
@@ -158,8 +116,7 @@ def is_known_tool(tool: str) -> bool:
 
 
 # Curated, pre-loaded model options per provider (admin can still type a custom
-# value in the UI). Keep model *names* as the API model identifiers; labels are
-# friendly display names.
+# value in the UI). Values are the API model identifiers; labels are friendly.
 MODEL_CATALOG: dict[str, list[dict]] = {
     "openai": [
         {"value": "gpt-4o", "label": "GPT-4o"},
