@@ -183,7 +183,7 @@ async def create_job(
         audio_dir = os.path.join(_job_folder(job.id), "audio")
         os.makedirs(audio_dir, exist_ok=True)
         safe = "".join(ch for ch in os.path.basename(audio.filename) if ch.isalnum() or ch in "._- ").strip() or f"audio{ext}"
-        abs_path = os.path.join(audio_dir, safe)
+        abs_path = os.path.abspath(os.path.join(audio_dir, safe))
         with open(abs_path, "wb") as fh:
             fh.write(contents)
         uf = UploadedFile(

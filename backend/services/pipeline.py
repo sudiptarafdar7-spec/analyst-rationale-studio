@@ -51,6 +51,32 @@ def job_folder(job_id) -> str:
     return os.path.join(settings.JOB_FILES_DIR, str(job_id))
 
 
+def _resolve_audio_path(job, uf) -> str | None:
+    """Find the job's audio on disk regardless of how the path was stored.
+
+    Audio lives under job_files/<job_id>/audio/. The stored file_path may be
+    absolute (new jobs) or relative (older jobs); resolve_uploaded_file_path is
+    only correct for /uploads/ files, so we try several candidates here.
+    """
+    if not uf or not uf.file_path:
+        return None
+    fp = uf.file_path
+    adir = os.path.join(job_folder(job.id), "audio")
+    candidates = [fp, os.path.abspath(fp)]
+    base = os.path.basename(fp)
+    if base:
+        candidates.append(os.path.join(adir, base))
+    resolved = resolve_uploaded_file_path(fp)
+    if resolved:
+        candidates.append(resolved)
+    if os.path.isdir(adir):
+        candidates += [os.path.join(adir, f) for f in sorted(os.listdir(adir))]
+    for c in candidates:
+        if c and os.path.isfile(c):
+            return c
+    return None
+
+
 def _analyst_overrides(job: Job, db) -> dict:
     """Target-analyst context for the AI steps.
 
@@ -173,8 +199,8 @@ def _step_transcribe(job, db, cfg) -> dict:
     if not job.audio_file_id:
         raise RuntimeError("No audio uploaded for this job.")
     uf = db.get(UploadedFile, job.audio_file_id)
-    audio_path = resolve_uploaded_file_path(uf.file_path) if uf else None
-    if not audio_path or not os.path.exists(audio_path):
+    audio_path = _resolve_audio_path(job, uf)
+    if not audio_path:
         raise RuntimeError("Audio file is missing on disk.")
     t.run(str(job.id), audio_path)
     return {"output_paths": {"transcript": os.path.join(job_folder(job.id), "transcripts", "transcript.txt")}}

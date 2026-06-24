@@ -9,6 +9,7 @@ import {
   FileDown,
   Filter,
   Globe,
+  Headphones,
   Instagram,
   Loader2,
   MessageCircle,
@@ -18,6 +19,7 @@ import {
   Radio,
   RotateCcw,
   Send,
+  Sparkles,
   Trash2,
   Users,
   X,
@@ -228,7 +230,7 @@ export default function MediaPresence() {
   const [fetching, setFetching] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [confirmDel, setConfirmDel] = useState<Job | null>(null);
-  const [playing, setPlaying] = useState<Job | null>(null);
+  const [playing, setPlaying] = useState<{ job: Job; mode: "video" | "audio" } | null>(null);
   const [analystOpen, setAnalystOpen] = useState(false);
   const isEdit = Boolean(form.id);
   const invalidate = () => qc.invalidateQueries({ queryKey: ["jobs"] });
@@ -329,6 +331,11 @@ export default function MediaPresence() {
     mutationFn: (id: string) => api.post(`/jobs/${id}/restart`),
     onSuccess: () => { toast.success("Restarting from step 1"); invalidate(); },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : "Could not restart"),
+  });
+  const start = useMutation({
+    mutationFn: (id: string) => api.post(`/jobs/${id}/start`),
+    onSuccess: (_d, id) => { toast.success("Pipeline started"); invalidate(); navigate(`/ai-rationale/${id}`); },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : "Could not start"),
   });
 
   const pickAudio = (f: File | undefined) => {
@@ -480,8 +487,17 @@ export default function MediaPresence() {
                   ) : <span className="text-xs text-slate-400">—</span>}
                 </div>
                 <div className="flex flex-1 items-center justify-end gap-1">
-                  {(j.youtube_url || j.audio_url) && (
-                    <button onClick={() => setPlaying(j)} title="Play video" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Play size={16} /></button>
+                  {j.youtube_url && (
+                    <button onClick={() => setPlaying({ job: j, mode: "video" })} title="Play video" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Play size={16} /></button>
+                  )}
+                  {j.audio_url && (
+                    <button onClick={() => setPlaying({ job: j, mode: "audio" })} title="Play audio" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Headphones size={16} /></button>
+                  )}
+                  {j.status === "pending" && (
+                    <button onClick={() => start.mutate(j.id)} disabled={start.isPending} title="Start making rationale"
+                      className="inline-flex h-8 items-center gap-1 rounded-lg bg-brand px-2.5 text-xs font-medium text-white transition hover:bg-brand/90 disabled:opacity-50">
+                      {start.isPending ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Start
+                    </button>
                   )}
                   <button onClick={() => navigate(`/ai-rationale/${j.id}`)} title="Open pipeline"
                     className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition hover:ring-2 hover:ring-brand/20 ${st.cls}`}>
@@ -716,7 +732,7 @@ export default function MediaPresence() {
         </div>
       </Modal>
 
-      <PlayPopup job={playing} onClose={() => setPlaying(null)} />
+      <PlayPopup playing={playing} onClose={() => setPlaying(null)} />
 
       <Modal open={confirmDel !== null} onClose={() => setConfirmDel(null)} title="Delete entry?" maxWidth="max-w-md">
         <p className="text-sm text-slate-600">
@@ -733,15 +749,17 @@ export default function MediaPresence() {
   );
 }
 
-function PlayPopup({ job, onClose }: { job: Job | null; onClose: () => void }) {
+function PlayPopup({ playing, onClose }: { playing: { job: Job; mode: "video" | "audio" } | null; onClose: () => void }) {
+  const job = playing?.job ?? null;
+  const mode = playing?.mode ?? "video";
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const embedId = ytEmbedId(job?.youtube_url ?? null);
+  const embedId = mode === "video" ? ytEmbedId(job?.youtube_url ?? null) : null;
 
   useEffect(() => {
     let revoked: string | null = null;
     setAudioUrl(null);
-    if (job && !embedId && job.audio_url) {
+    if (job && mode === "audio" && job.audio_url) {
       setLoading(true);
       api.getBlob(`/jobs/${job.id}/audio`)
         .then((b) => { const u = URL.createObjectURL(b); revoked = u; setAudioUrl(u); })
@@ -749,21 +767,29 @@ function PlayPopup({ job, onClose }: { job: Job | null; onClose: () => void }) {
         .finally(() => setLoading(false));
     }
     return () => { if (revoked) URL.revokeObjectURL(revoked); };
-  }, [job, embedId]);
+  }, [job, mode]);
 
   return (
-    <Modal open={job !== null} onClose={onClose} title={job?.title || job?.platform_name || "Playback"} maxWidth="max-w-2xl">
-      {embedId ? (
-        <div className="aspect-video w-full overflow-hidden rounded-xl bg-black">
-          <iframe className="h-full w-full" src={`https://www.youtube.com/embed/${embedId}`} title="Video"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
-        </div>
-      ) : job?.audio_url ? (
-        loading ? <div className="grid h-24 place-items-center"><Loader2 className="animate-spin text-slate-300" /></div>
-          : audioUrl ? <audio controls autoPlay className="w-full" src={audioUrl} />
-          : <p className="text-sm text-slate-500">Audio unavailable.</p>
+    <Modal open={playing !== null} onClose={onClose}
+      title={`${mode === "audio" ? "🎧 " : "▶ "}${job?.title || job?.platform_name || "Playback"}`} maxWidth="max-w-2xl">
+      {mode === "video" ? (
+        embedId ? (
+          <div className="aspect-video w-full overflow-hidden rounded-xl bg-black">
+            <iframe className="h-full w-full" src={`https://www.youtube.com/embed/${embedId}`} title="Video"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">
+            This entry has no embeddable video.
+            {job?.youtube_url ? <> <a className="text-brand hover:underline" href={job.youtube_url} target="_blank" rel="noreferrer">Open the link</a>.</> : null}
+          </p>
+        )
+      ) : loading ? (
+        <div className="grid h-24 place-items-center"><Loader2 className="animate-spin text-slate-300" /></div>
+      ) : audioUrl ? (
+        <audio controls autoPlay className="w-full" src={audioUrl} />
       ) : (
-        <p className="text-sm text-slate-500">No video or audio attached to this entry.</p>
+        <p className="text-sm text-slate-500">Audio unavailable.</p>
       )}
     </Modal>
   );
