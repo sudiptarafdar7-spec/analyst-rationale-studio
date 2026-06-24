@@ -470,20 +470,20 @@ export default function MediaPresence() {
                   <div className="truncate text-xs text-slate-400">{j.title || "Untitled appearance"}</div>
                 </div>
                 <div className="w-32 shrink-0 text-sm text-slate-600">{fmtDateTime(j.video_date, j.video_time)}</div>
-                <div className="flex w-28 shrink-0 items-center">
+                <div className="flex w-56 shrink-0 flex-wrap items-center gap-1">
                   {j.extract_all_stocks ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"><Users size={11} /> All</span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600"><Users size={12} /> All analysts</span>
                   ) : j.analysts.length ? (
-                    <div className="flex -space-x-2">
-                      {j.analysts.slice(0, 4).map((a) => (
-                        a.avatar_path ? (
-                          <img key={a.id} src={a.avatar_path} alt={a.name} title={a.name} className="h-7 w-7 rounded-full object-cover ring-2 ring-white" />
+                    j.analysts.map((a) => (
+                      <span key={a.id} title={a.name} className="inline-flex max-w-full items-center gap-1 rounded-full bg-slate-100 py-0.5 pl-0.5 pr-2 text-xs">
+                        {a.avatar_path ? (
+                          <img src={a.avatar_path} alt="" className="h-5 w-5 rounded-full object-cover" />
                         ) : (
-                          <span key={a.id} title={a.name} className="grid h-7 w-7 place-items-center rounded-full bg-brand-100 text-[10px] font-semibold text-brand-700 ring-2 ring-white">{a.name[0]?.toUpperCase()}</span>
-                        )
-                      ))}
-                      {j.analysts.length > 4 && <span className="grid h-7 w-7 place-items-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-500 ring-2 ring-white">+{j.analysts.length - 4}</span>}
-                    </div>
+                          <span className="grid h-5 w-5 place-items-center rounded-full bg-brand-100 text-[9px] font-semibold text-brand-700">{a.name[0]?.toUpperCase()}</span>
+                        )}
+                        <span className="max-w-[88px] truncate font-medium text-slate-700">{a.name}</span>
+                      </span>
+                    ))
                   ) : <span className="text-xs text-slate-400">—</span>}
                 </div>
                 <div className="flex flex-1 items-center justify-end gap-1">

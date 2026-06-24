@@ -6,6 +6,7 @@ import {
   Download, Loader2, Play, RotateCcw, Save, Sparkles, Trash2, X,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
+import Modal from "../components/Modal";
 import { useAuthStore } from "../store/auth";
 import { toast } from "../store/toast";
 
@@ -64,6 +65,7 @@ export default function WorkPage() {
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [activeStep, setActiveStep] = useState<number>(1);
   const [busy, setBusy] = useState(false);
+  const [retryStep, setRetryStep] = useState<number | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const userPickedStep = useRef(false);
 
@@ -155,14 +157,18 @@ export default function WorkPage() {
               const st: StepStatus = s?.status ?? "pending";
               const isActive = n === activeStep;
               return (
-                <li key={n}>
+                <li key={n} className="group flex items-center gap-1">
                   <button
                     onClick={() => { userPickedStep.current = true; setActiveStep(n); }}
-                    className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition ${isActive ? "bg-brand-50 ring-1 ring-brand/20" : "hover:bg-slate-50"}`}
+                    className={`flex flex-1 items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition ${isActive ? "bg-brand-50 ring-1 ring-brand/20" : "hover:bg-slate-50"}`}
                   >
                     <StepIcon status={st} n={n} />
                     <span className={`flex-1 truncate ${st === "done" ? "text-slate-700" : st === "running" ? "font-medium text-blue-700" : "text-slate-500"}`}>{STEP_LABELS[n]}</span>
                     {gateStep === n && data.status === "paused_review" && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">REVIEW</span>}
+                  </button>
+                  <button onClick={() => setRetryStep(n)} title={`Restart from step ${n}`}
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-slate-300 opacity-0 transition hover:bg-slate-100 hover:text-brand focus:opacity-100 group-hover:opacity-100">
+                    <RotateCcw size={13} />
                   </button>
                 </li>
               );
@@ -208,6 +214,19 @@ export default function WorkPage() {
           <ArtifactPreview jobId={jobId} step={activeStep} stepStatus={stepMap.get(activeStep)?.status ?? "pending"} />
         </div>
       </div>
+
+      <Modal open={retryStep !== null} onClose={() => setRetryStep(null)} title="Restart from this step?" maxWidth="max-w-md">
+        <p className="text-sm text-slate-600">
+          The job will re-run from <span className="font-medium">step {retryStep} — {retryStep ? STEP_LABELS[retryStep] : ""}</span>. Every later step runs again and its output is overwritten.
+        </p>
+        <div className="mt-5 flex justify-end gap-2">
+          <button className="btn-ghost" onClick={() => setRetryStep(null)}>Cancel</button>
+          <button className="btn-primary" disabled={busy}
+            onClick={() => { const n = retryStep; setRetryStep(null); if (n) act(`/jobs/${jobId}/retry-step`, { step_no: n }, `Restarting from step ${n}`); }}>
+            Yes, restart
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -286,6 +305,53 @@ function ExtractGate({ jobId, onDone }: { jobId: string; onDone: () => void }) {
 }
 
 /* ----------------------------- mapping gate ----------------------------- */
+interface MasterHit { symbol: string; short_name: string; listed_name: string; security_id: string; exchange: string; instrument: string }
+
+function StockSymbolCell({ value, onChange, onPick }: { value: string; onChange: (v: string) => void; onPick: (h: MasterHit) => void }) {
+  const [open, setOpen] = useState(false);
+  const [results, setResults] = useState<MasterHit[]>([]);
+  const [loading, setLoading] = useState(false);
+  const tRef = useRef<number | undefined>(undefined);
+  const query = (q: string) => {
+    onChange(q);
+    setOpen(true);
+    window.clearTimeout(tRef.current);
+    if (q.trim().length < 1) { setResults([]); return; }
+    tRef.current = window.setTimeout(async () => {
+      setLoading(true);
+      try {
+        const r = await api.get<{ results: MasterHit[] }>(`/tools/master-search?q=${encodeURIComponent(q.trim())}&limit=12`);
+        setResults(r.results);
+      } catch { setResults([]); } finally { setLoading(false); }
+    }, 250);
+  };
+  return (
+    <div className="relative">
+      <input value={value} onChange={(e) => query(e.target.value)} onFocus={() => value && setOpen(true)}
+        placeholder="Type symbol / name…"
+        className="w-full bg-transparent px-2 py-1.5 text-xs outline-none focus:bg-brand-50" />
+      {open && (loading || results.length > 0) && (
+        <>
+          <button className="fixed inset-0 z-10 cursor-default" onClick={() => setOpen(false)} aria-hidden tabIndex={-1} />
+          <div className="absolute z-20 mt-1 max-h-56 w-72 overflow-auto rounded-xl border border-slate-200 bg-white py-1 text-left shadow-lg">
+            {loading && results.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-slate-400">Searching…</div>
+            ) : (
+              results.map((h, k) => (
+                <button key={k} type="button" onClick={() => { onPick(h); setOpen(false); }}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-slate-50">
+                  <span className="min-w-0 truncate"><span className="font-semibold text-slate-700">{h.symbol}</span> <span className="text-slate-400">{h.listed_name}</span></span>
+                  <span className="shrink-0 text-[10px] text-slate-400">{h.exchange} · {h.security_id}</span>
+                </button>
+              ))
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 const MAP_COLS = ["INPUT STOCK", "STOCK SYMBOL", "SECURITY ID", "EXCHANGE", "CHART TYPE", "ANALYSIS"];
 function MappingGate({ jobId, onDone }: { jobId: string; onDone: () => void }) {
   const [rows, setRows] = useState<Record<string, string>[]>([]);
@@ -303,7 +369,7 @@ function MappingGate({ jobId, onDone }: { jobId: string; onDone: () => void }) {
   };
   return (
     <div className="card border-amber-200 p-5">
-      <GateHeader title="Review stock mapping" hint="Fix any unmatched rows (highlighted): set the correct STOCK SYMBOL and SECURITY ID. CHART TYPE defaults to Daily." />
+      <GateHeader title="Review stock mapping" hint="Unmatched rows are highlighted. In STOCK SYMBOL, type a symbol or name to search the scrip master — picking a result fills Security ID, Exchange and the names. Every field stays editable." />
       {loading ? <Loader2 className="animate-spin text-slate-300" /> : (
         <div className="mt-3 max-h-80 overflow-auto rounded-xl border border-slate-200">
           <table className="w-full border-collapse text-sm">
@@ -316,9 +382,20 @@ function MappingGate({ jobId, onDone }: { jobId: string; onDone: () => void }) {
                 return (
                   <tr key={i} className={unmatched ? "bg-amber-50" : "odd:bg-white even:bg-slate-50/40"}>
                     {MAP_COLS.map((c) => (
-                      <td key={c} className="border-b border-slate-100 p-0">
-                        <input value={r[c] ?? ""} onChange={(e) => setCell(i, c, e.target.value)}
-                          className="w-full bg-transparent px-2 py-1.5 text-xs outline-none focus:bg-brand-50" />
+                      <td key={c} className="border-b border-slate-100 p-0 align-top">
+                        {c === "STOCK SYMBOL" ? (
+                          <StockSymbolCell
+                            value={r[c] ?? ""}
+                            onChange={(v) => setCell(i, c, v)}
+                            onPick={(h) => setRows((rs) => rs.map((row, idx) => idx === i ? {
+                              ...row, "STOCK SYMBOL": h.symbol, "SECURITY ID": h.security_id, "EXCHANGE": h.exchange,
+                              "LISTED NAME": h.listed_name, "SHORT NAME": h.short_name, "INSTRUMENT": h.instrument,
+                            } : row))}
+                          />
+                        ) : (
+                          <input value={r[c] ?? ""} onChange={(e) => setCell(i, c, e.target.value)}
+                            className="w-full bg-transparent px-2 py-1.5 text-xs outline-none focus:bg-brand-50" />
+                        )}
                       </td>
                     ))}
                   </tr>

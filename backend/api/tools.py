@@ -1,7 +1,7 @@
 """Standalone pipeline tools exposed directly to users (e.g. Generate Chart)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from core.deps import get_current_user
 from db.models import User
@@ -30,3 +30,15 @@ def generate_chart(
         short_name=body.short_name or "",
     )
     return GenerateChartOut(chart_url=public_url, cmp=cmp)
+
+
+@router.get("/master-search")
+def master_search(
+    q: str = Query(..., min_length=1, description="Symbol or name fragment"),
+    limit: int = Query(20, ge=1, le=50),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Search the active scrip master for stocks matching q (mapping gate autofill)."""
+    from services.master_search import search_master
+
+    return {"results": search_master(q, limit)}
