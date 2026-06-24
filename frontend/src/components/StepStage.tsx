@@ -37,7 +37,7 @@ export default function StepStage({ step, status, label, analysts }: {
         )}
       </div>
 
-      <div className="grid h-48 place-items-center overflow-hidden bg-gradient-to-b from-slate-50 to-white">
+      <div className={`grid h-48 place-items-center overflow-hidden bg-gradient-to-b ${done ? "from-emerald-50 to-white" : failed ? "from-red-50/60 to-white" : "from-slate-50 to-white"}`}>
         {done ? <DoneScene /> : failed ? <FailScene /> : running ? <Scene step={step} analysts={analysts} /> : <IdleScene step={step} />}
       </div>
 
@@ -82,14 +82,37 @@ function IdleScene({ step }: { step: number }) {
 }
 
 function DoneScene() {
+  const SPARKS = 10;
   return (
-    <motion.div className="flex flex-col items-center gap-3"
-      initial={{ scale: 0.7, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", bounce: 0.5 }}>
-      <span className="grid h-16 w-16 place-items-center rounded-full bg-emerald-100 text-emerald-600">
-        <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.15, type: "spring", bounce: 0.6 }}><Check size={32} /></motion.span>
+    <div className="flex flex-col items-center gap-3">
+      <span className="relative grid h-24 w-24 place-items-center">
+        {/* pulsing rings */}
+        {[0, 1].map((i) => (
+          <motion.span key={i} className="absolute inset-1 rounded-full border-2 border-emerald-300"
+            initial={{ scale: 0.55, opacity: 0.55 }} animate={{ scale: 1.7, opacity: 0 }}
+            transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.55, ease: "easeOut" }} />
+        ))}
+        {/* sparkle burst */}
+        {Array.from({ length: SPARKS }).map((_, i) => {
+          const ang = (i / SPARKS) * Math.PI * 2;
+          return (
+            <motion.span key={`s${i}`} className="absolute left-1/2 top-1/2 h-1.5 w-1.5 rounded-full bg-emerald-400"
+              initial={{ x: 0, y: 0, scale: 0, opacity: 0 }}
+              animate={{ x: Math.cos(ang) * 40, y: Math.sin(ang) * 40, scale: [0, 1, 0], opacity: [0, 1, 0] }}
+              transition={{ delay: 0.35, duration: 0.75, ease: "easeOut" }} />
+          );
+        })}
+        {/* the badge — pops in, then the check draws */}
+        <motion.span className="grid h-16 w-16 place-items-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-500/30"
+          initial={{ scale: 0, rotate: -25 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 220, damping: 12 }}>
+          <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+            <motion.path d="M5 13l4 4L19 7" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ delay: 0.28, duration: 0.5, ease: "easeOut" }} />
+          </svg>
+        </motion.span>
       </span>
-      <span className="text-sm font-medium text-emerald-700">Completed</span>
-    </motion.div>
+      <motion.span className="text-sm font-semibold text-emerald-700"
+        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}>Completed</motion.span>
+    </div>
   );
 }
 
