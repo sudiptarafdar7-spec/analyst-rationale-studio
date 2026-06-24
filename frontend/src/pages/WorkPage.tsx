@@ -311,7 +311,33 @@ function StockSymbolCell({ value, onChange, onPick }: { value: string; onChange:
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<MasterHit[]>([]);
   const [loading, setLoading] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number; up: boolean } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const tRef = useRef<number | undefined>(undefined);
+
+  // Anchor the menu to the input in viewport coords so it is never clipped by
+  // the scrollable grid; flip upward when there isn't room below.
+  const place = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - r.bottom;
+    const up = spaceBelow < 248 && r.top > spaceBelow;
+    setPos({ left: r.left, top: up ? r.top : r.bottom + 4, width: Math.max(r.width, 280), up });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    const onMove = () => place();
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => {
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+    };
+  }, [open, results.length]);
+
   const query = (q: string) => {
     onChange(q);
     setOpen(true);
@@ -325,15 +351,20 @@ function StockSymbolCell({ value, onChange, onPick }: { value: string; onChange:
       } catch { setResults([]); } finally { setLoading(false); }
     }, 250);
   };
+
+  const showMenu = open && (loading || results.length > 0) && pos;
   return (
-    <div className="relative">
-      <input value={value} onChange={(e) => query(e.target.value)} onFocus={() => value && setOpen(true)}
+    <>
+      <input ref={inputRef} value={value} onChange={(e) => query(e.target.value)} onFocus={() => { if (value) { setOpen(true); place(); } }}
         placeholder="Type symbol / name…"
         className="w-full bg-transparent px-2 py-1.5 text-xs outline-none focus:bg-brand-50" />
-      {open && (loading || results.length > 0) && (
+      {showMenu && (
         <>
-          <button className="fixed inset-0 z-10 cursor-default" onClick={() => setOpen(false)} aria-hidden tabIndex={-1} />
-          <div className="absolute z-20 mt-1 max-h-56 w-72 overflow-auto rounded-xl border border-slate-200 bg-white py-1 text-left shadow-lg">
+          <button className="fixed inset-0 z-40 cursor-default" onClick={() => setOpen(false)} aria-hidden tabIndex={-1} />
+          <div
+            style={{ position: "fixed", left: pos!.left, top: pos!.top, width: pos!.width, transform: pos!.up ? "translateY(-100%)" : undefined }}
+            className="z-50 max-h-60 overflow-auto rounded-xl border border-slate-200 bg-white py-1 text-left shadow-xl"
+          >
             {loading && results.length === 0 ? (
               <div className="px-3 py-2 text-xs text-slate-400">Searching…</div>
             ) : (
@@ -348,7 +379,7 @@ function StockSymbolCell({ value, onChange, onPick }: { value: string; onChange:
           </div>
         </>
       )}
-    </div>
+    </>
   );
 }
 
