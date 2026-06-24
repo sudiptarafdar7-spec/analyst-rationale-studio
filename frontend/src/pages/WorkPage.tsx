@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, ArrowLeft, Check, CheckCircle2, ChevronRight, CloudUpload,
-  Download, Loader2, Play, RotateCcw, Save, Sparkles, Trash2, X,
+  Download, Eye, EyeOff, Loader2, Play, RotateCcw, Save, Sparkles, Trash2, X,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import Modal from "../components/Modal";
@@ -222,30 +222,55 @@ function StepIcon({ status, n }: { status: StepStatus; n: number }) {
 }
 
 function ArtifactPreview({ jobId, step, stepStatus }: { jobId: string; step: number; stepStatus: StepStatus }) {
+  const isPdf = step === 10;
   const key = ARTIFACT_KEY[step];
+  const [open, setOpen] = useState(false);
   const [text, setText] = useState<string | null>(null);
-  const [state, setState] = useState<"idle" | "loading" | "empty" | "error">("idle");
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [state, setState] = useState<"idle" | "loading" | "empty">("idle");
 
+  // Collapse + reset whenever the active step changes.
   useEffect(() => {
-    setText(null);
-    if (!key || stepStatus !== "done") { setState("idle"); return; }
-    setState("loading");
-    api.getBlob(`/jobs/${jobId}/artifact?key=${key}`)
-      .then((b) => b.text())
-      .then((t) => { setText(t.slice(0, 20000)); setState("idle"); })
-      .catch(() => setState("empty"));
-  }, [jobId, step, key, stepStatus]);
+    setOpen(false); setText(null); setState("idle");
+    setPdfUrl((u) => { if (u) URL.revokeObjectURL(u); return null; });
+  }, [step]);
 
-  if (step === 10) return null;
+  // Lazy-load only when the user expands it (each step keeps its own output).
+  useEffect(() => {
+    if (!open || stepStatus !== "done") return;
+    if (isPdf) {
+      if (pdfUrl) return;
+      setState("loading");
+      api.getBlob(`/jobs/${jobId}/pdf`).then((b) => { setPdfUrl(URL.createObjectURL(b)); setState("idle"); }).catch(() => setState("empty"));
+      return;
+    }
+    if (!key || text !== null) return;
+    setState("loading");
+    api.getBlob(`/jobs/${jobId}/artifact?key=${key}`).then((b) => b.text())
+      .then((t) => { setText(t.slice(0, 20000)); setState("idle"); }).catch(() => setState("empty"));
+  }, [open, isPdf, key, stepStatus, jobId, text, pdfUrl]);
+
+  const available = stepStatus === "done" && (isPdf || !!key);
   return (
     <div className="card overflow-hidden">
-      <div className="border-b border-slate-100 px-4 py-2.5"><h3 className="text-sm font-semibold">Output — {STEP_LABELS[step]}</h3></div>
-      <div className="max-h-72 overflow-auto px-4 py-3">
-        {state === "loading" ? <Loader2 className="animate-spin text-slate-300" />
-          : stepStatus !== "done" ? <p className="text-sm text-slate-400">Runs after this step completes.</p>
-          : text ? <pre className="whitespace-pre-wrap break-words font-mono text-xs text-slate-700">{text}</pre>
-          : <p className="text-sm text-slate-400">No preview available.</p>}
+      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
+        <h3 className="text-sm font-semibold">{isPdf ? "Final PDF" : "Output"} — {STEP_LABELS[step]}</h3>
+        {available ? (
+          <button className="btn-ghost px-2.5 py-1 text-xs" onClick={() => setOpen((o) => !o)}>
+            {open ? <><EyeOff size={13} /> Hide</> : <><Eye size={13} /> View</>}
+          </button>
+        ) : (
+          <span className="text-xs text-slate-400">Runs after this step completes</span>
+        )}
       </div>
+      {open && available && (
+        <div className="max-h-[520px] overflow-auto px-4 py-3">
+          {state === "loading" ? <Loader2 className="animate-spin text-slate-300" />
+            : isPdf ? (pdfUrl ? <iframe title="PDF preview" src={pdfUrl} className="h-[480px] w-full rounded-lg border border-slate-200" /> : <p className="text-sm text-slate-400">PDF not available.</p>)
+            : text ? <pre className="whitespace-pre-wrap break-words font-mono text-xs text-slate-700">{text}</pre>
+            : <p className="text-sm text-slate-400">No preview available.</p>}
+        </div>
+      )}
     </div>
   );
 }
@@ -500,7 +525,6 @@ function CompletionPanel({ job, saved, onSaved, onDeleted }: { job: JobDetail; s
           <button className="btn bg-danger text-white hover:bg-danger/90" disabled={busy} onClick={del}><Trash2 size={16} /> Delete</button>
         </div>
       </div>
-      {pdfUrl && <iframe title="PDF preview" src={pdfUrl} className="mt-4 h-[480px] w-full rounded-xl border border-slate-200" />}
     </div>
   );
 }
