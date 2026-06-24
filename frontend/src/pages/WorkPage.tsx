@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowLeft, Check, CheckCircle2, ChevronRight, Clipboard, CloudUpload,
+  AlertTriangle, ArrowLeft, Check, CheckCircle2, ChevronRight, CloudUpload,
   Download, Loader2, Play, RotateCcw, Save, Sparkles, Trash2, X,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import Modal from "../components/Modal";
+import StepStage from "../components/StepStage";
 import { useAuthStore } from "../store/auth";
 import { toast } from "../store/toast";
 
@@ -33,6 +34,7 @@ interface JobDetail {
   error_message: string | null;
   output_pdf_path: string | null;
   pdf_url: string | null;
+  analysts?: { id: string; name: string; avatar_path: string | null }[];
   steps: StepOut[];
 }
 
@@ -49,8 +51,6 @@ const GATE_STEP: Record<Exclude<GateKind, "none">, number> = {
   extract_review: 4, mapping_review: 7, chart_upload: 9,
 };
 
-interface LogLine { step: number; line: string }
-
 export default function WorkPage() {
   const { jobId = "" } = useParams();
   const navigate = useNavigate();
@@ -62,11 +62,9 @@ export default function WorkPage() {
     refetchInterval: (q) => (q.state.data?.status === "running" ? 4000 : false),
   });
 
-  const [logs, setLogs] = useState<LogLine[]>([]);
   const [activeStep, setActiveStep] = useState<number>(1);
   const [busy, setBusy] = useState(false);
   const [retryStep, setRetryStep] = useState<number | null>(null);
-  const logRef = useRef<HTMLDivElement>(null);
   const userPickedStep = useRef(false);
 
   const data = job.data;
@@ -84,21 +82,13 @@ export default function WorkPage() {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${window.location.host}/ws/jobs/${jobId}?token=${encodeURIComponent(token)}`);
     ws.onmessage = (e) => {
-      let ev: { type: string; step_no?: number; line?: string; status?: string };
+      let ev: { type: string };
       try { ev = JSON.parse(e.data); } catch { return; }
-      if (ev.type === "log" && ev.step_no != null && ev.line != null) {
-        setLogs((ls) => [...ls, { step: ev.step_no!, line: ev.line! }]);
-      } else if (ev.type === "step" || ev.type === "gate" || ev.type === "done" || ev.type === "error") {
-        refetch();
-      }
+      if (["step", "gate", "done", "error"].includes(ev.type)) refetch();
     };
     return () => ws.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
-
-  useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [logs]);
 
   const stepMap = useMemo(() => {
     const m = new Map<number, StepOut>();
@@ -123,7 +113,6 @@ export default function WorkPage() {
   if (!data) return <div className="card p-8 text-center text-slate-500">Job not found. <Link className="text-brand" to="/ai-rationale">Back</Link></div>;
 
   const gateStep = data.gate !== "none" ? GATE_STEP[data.gate] : null;
-  const activeLogs = logs.filter((l) => l.step === activeStep);
 
   return (
     <div className="space-y-6">
@@ -190,25 +179,8 @@ export default function WorkPage() {
               onRestart={() => act(`/jobs/${jobId}/restart`, undefined, "Restarting")} />
           )}
 
-          {/* Live log stream */}
-          <div className="card overflow-hidden">
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
-              <h3 className="text-sm font-semibold">Logs — step {activeStep}: {STEP_LABELS[activeStep]}</h3>
-              <button className="btn-ghost px-2 py-1 text-xs"
-                onClick={() => { navigator.clipboard?.writeText(activeLogs.map((l) => l.line).join("\n")); toast.success("Logs copied"); }}>
-                <Clipboard size={13} /> Copy
-              </button>
-            </div>
-            <div ref={logRef} className="max-h-64 overflow-auto bg-slate-950 px-4 py-3 font-mono text-xs leading-relaxed text-slate-200">
-              {activeLogs.length === 0 ? (
-                <span className="text-slate-500">
-                  {stepMap.get(activeStep)?.log_tail || (data.status === "running" ? "Waiting for output…" : "No logs for this step yet.")}
-                </span>
-              ) : (
-                activeLogs.map((l, i) => <div key={i} className="whitespace-pre-wrap">{l.line}</div>)
-              )}
-            </div>
-          </div>
+          {/* Animated per-step progress */}
+          <StepStage step={activeStep} status={stepMap.get(activeStep)?.status ?? "pending"} label={STEP_LABELS[activeStep]} analysts={data.analysts} />
 
           {/* Artifact preview for the active step */}
           <ArtifactPreview jobId={jobId} step={activeStep} stepStatus={stepMap.get(activeStep)?.status ?? "pending"} />
