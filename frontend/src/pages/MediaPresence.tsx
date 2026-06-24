@@ -486,29 +486,39 @@ export default function MediaPresence() {
                     ))
                   ) : <span className="text-xs text-slate-400">—</span>}
                 </div>
-                <div className="flex flex-1 items-center justify-end gap-1">
-                  {j.youtube_url && (
-                    <button onClick={() => setPlaying({ job: j, mode: "video" })} title="Play video" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Play size={16} /></button>
-                  )}
-                  {j.audio_url && (
-                    <button onClick={() => setPlaying({ job: j, mode: "audio" })} title="Play audio" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Headphones size={16} /></button>
-                  )}
-                  {j.status === "pending" && (
-                    <button onClick={() => start.mutate(j.id)} disabled={start.isPending} title="Start making rationale"
-                      className="inline-flex h-8 items-center gap-1 rounded-lg bg-brand px-2.5 text-xs font-medium text-white transition hover:bg-brand/90 disabled:opacity-50">
-                      {start.isPending ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Start
-                    </button>
-                  )}
-                  <button onClick={() => navigate(`/ai-rationale/${j.id}`)} title="Open pipeline"
-                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition hover:ring-2 hover:ring-brand/20 ${st.cls}`}>
-                    {st.pulse && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />}{st.label}
-                  </button>
-                  {(j.status === "completed" || j.status === "saved") && j.pdf_url && (
-                    <button onClick={() => downloadJobPdf(j)} title="Download PDF" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><FileDown size={16} /></button>
-                  )}
-                  <button onClick={() => openEdit(j)} title="Edit" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Pencil size={15} /></button>
-                  <button onClick={() => restart.mutate(j.id)} disabled={restart.isPending} title="Reload pipeline" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand disabled:opacity-40"><RotateCcw size={15} /></button>
-                  <button onClick={() => setConfirmDel(j)} title="Delete" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-danger"><Trash2 size={15} /></button>
+                <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                  {/* media — fixed slot so rows line up */}
+                  <div className="flex w-[68px] items-center justify-end gap-1">
+                    {j.youtube_url && (
+                      <button onClick={() => setPlaying({ job: j, mode: "video" })} title="Play video" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Play size={16} /></button>
+                    )}
+                    {j.audio_url && (
+                      <button onClick={() => setPlaying({ job: j, mode: "audio" })} title="Play audio" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Headphones size={16} /></button>
+                    )}
+                  </div>
+                  {/* status / start — fixed slot */}
+                  <div className="flex w-28 shrink-0 justify-center">
+                    {j.status === "pending" ? (
+                      <button onClick={() => start.mutate(j.id)} disabled={start.isPending} title="Start making rationale"
+                        className="inline-flex h-8 w-full items-center justify-center gap-1 rounded-lg bg-brand px-2 text-xs font-medium text-white transition hover:bg-brand/90 disabled:opacity-50">
+                        {start.isPending ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Start
+                      </button>
+                    ) : (
+                      <button onClick={() => navigate(`/ai-rationale/${j.id}`)} title="Open pipeline"
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition hover:ring-2 hover:ring-brand/20 ${st.cls}`}>
+                        {st.pulse && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />}{st.label}
+                      </button>
+                    )}
+                  </div>
+                  {/* pdf — reserved slot */}
+                  <div className="flex w-8 justify-center">
+                    {(j.status === "completed" || j.status === "saved") && j.pdf_url && (
+                      <button onClick={() => downloadJobPdf(j)} title="Download PDF" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><FileDown size={16} /></button>
+                    )}
+                  </div>
+                  <button onClick={() => openEdit(j)} title="Edit" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Pencil size={15} /></button>
+                  <button onClick={() => restart.mutate(j.id)} disabled={restart.isPending} title="Reload pipeline" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand disabled:opacity-40"><RotateCcw size={15} /></button>
+                  <button onClick={() => setConfirmDel(j)} title="Delete" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-danger"><Trash2 size={15} /></button>
                 </div>
               </div>
             );
