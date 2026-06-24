@@ -231,8 +231,11 @@ export default function WorkPage() {
               onRestart={() => act(`/jobs/${jobId}/restart`, undefined, "Restarting")} />
           )}
 
-          {/* Animated per-step progress */}
-          <StepStage step={activeStep} status={stepMap.get(activeStep)?.status ?? "pending"} label={STEP_LABELS[activeStep]} analysts={data.analysts} />
+          {/* Animated per-step progress — hidden while a review gate or the
+              completion/PDF panel is showing, so there's no redundant tick. */}
+          {data.status !== "paused_review" && data.status !== "completed" && data.status !== "saved" && (
+            <StepStage step={activeStep} status={stepMap.get(activeStep)?.status ?? "pending"} label={STEP_LABELS[activeStep]} analysts={data.analysts} />
+          )}
 
           {/* Artifact preview for the active step */}
           <ArtifactPreview jobId={jobId} step={activeStep} stepStatus={stepMap.get(activeStep)?.status ?? "pending"} />
@@ -318,9 +321,9 @@ function ArtifactPreview({ jobId, step, stepStatus }: { jobId: string; step: num
         )}
       </div>
       {open && available && (
-        <div className="max-h-[520px] overflow-auto px-4 py-3">
+        <div className="max-h-[84vh] overflow-auto px-4 py-3">
           {state === "loading" ? <Loader2 className="animate-spin text-slate-300" />
-            : isPdf ? (pdfUrl ? <iframe title="PDF preview" src={pdfUrl} className="h-[480px] w-full rounded-lg border border-slate-200" /> : <p className="text-sm text-slate-400">PDF not available.</p>)
+            : isPdf ? (pdfUrl ? <iframe title="PDF preview" src={pdfUrl} className="h-[80vh] w-full rounded-lg border border-slate-200" /> : <p className="text-sm text-slate-400">PDF not available.</p>)
             : text ? <pre className="whitespace-pre-wrap break-words font-mono text-xs text-slate-700">{text}</pre>
             : <p className="text-sm text-slate-400">No preview available.</p>}
         </div>
@@ -346,7 +349,7 @@ function ExtractGate({ jobId, onDone }: { jobId: string; onDone: () => void }) {
     <div className="card border-amber-200 p-5">
       <GateHeader title="Review extracted stock calls" hint="Each stock on its own line, followed by its analysis. Edit freely — this is what the rest of the pipeline parses." />
       {loading ? <Loader2 className="animate-spin text-slate-300" /> : (
-        <textarea className="input mt-3 h-64 w-full font-mono text-sm" value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
+        <textarea className="input mt-3 h-[60vh] w-full font-mono text-sm" value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
       )}
       <div className="mt-4 flex justify-end">
         <button className="btn-primary" disabled={saving || loading} onClick={submit}>{saving && <Loader2 size={16} className="animate-spin" />} Save &amp; Continue <ChevronRight size={16} /></button>
@@ -453,7 +456,7 @@ function MappingGate({ jobId, onDone }: { jobId: string; onDone: () => void }) {
     <div className="card border-amber-200 p-5">
       <GateHeader title="Review stock mapping" hint="Unmatched rows are highlighted. In STOCK SYMBOL, type a symbol or name to search the scrip master — picking a result fills Security ID, Exchange and the names. Every field stays editable." />
       {loading ? <Loader2 className="animate-spin text-slate-300" /> : (
-        <div className="mt-3 max-h-80 overflow-auto rounded-xl border border-slate-200">
+        <div className="mt-3 max-h-[68vh] overflow-auto rounded-xl border border-slate-200">
           <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 bg-slate-50">
               <tr>{MAP_COLS.map((c) => <th key={c} className="border-b border-slate-200 px-2 py-2 text-left text-xs font-semibold text-slate-500">{c}</th>)}</tr>
