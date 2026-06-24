@@ -65,15 +65,18 @@ export default function WorkPage() {
   const [activeStep, setActiveStep] = useState<number>(1);
   const [busy, setBusy] = useState(false);
   const [retryStep, setRetryStep] = useState<number | null>(null);
-  const userPickedStep = useRef(false);
 
   const data = job.data;
   const refetch = () => qc.invalidateQueries({ queryKey: ["job", jobId] });
 
-  // Keep the active step following the pipeline unless the user clicked one.
+  // Auto-follow the pipeline: jump to the running step as it advances, and land
+  // on the gate step while paused for review.
   useEffect(() => {
-    if (data && !userPickedStep.current) setActiveStep(Math.min(Math.max(data.current_step || 1, 1), 10));
-  }, [data?.current_step]);
+    if (!data) return;
+    const gs = data.gate !== "none" ? GATE_STEP[data.gate] : null;
+    const target = data.status === "paused_review" && gs ? gs : Math.min(Math.max(data.current_step || 1, 1), 10);
+    setActiveStep(target);
+  }, [data?.current_step, data?.status, data?.gate]);
 
   // Live progress over WS (history is replayed on connect, so refresh rebuilds logs).
   useEffect(() => {
@@ -148,7 +151,7 @@ export default function WorkPage() {
               return (
                 <li key={n} className="group flex items-center gap-1">
                   <button
-                    onClick={() => { userPickedStep.current = true; setActiveStep(n); }}
+                    onClick={() => setActiveStep(n)}
                     className={`flex flex-1 items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition ${isActive ? "bg-brand-50 ring-1 ring-brand/20" : "hover:bg-slate-50"}`}
                   >
                     <StepIcon status={st} n={n} />
@@ -229,11 +232,12 @@ function ArtifactPreview({ jobId, step, stepStatus }: { jobId: string; step: num
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [state, setState] = useState<"idle" | "loading" | "empty">("idle");
 
-  // Collapse + reset whenever the active step changes.
+  // Collapse + reset whenever the active step changes OR its status changes
+  // (e.g. a rerun flips it back to pending, so old output must be dropped).
   useEffect(() => {
     setOpen(false); setText(null); setState("idle");
     setPdfUrl((u) => { if (u) URL.revokeObjectURL(u); return null; });
-  }, [step]);
+  }, [step, stepStatus]);
 
   // Lazy-load only when the user expands it (each step keeps its own output).
   useEffect(() => {

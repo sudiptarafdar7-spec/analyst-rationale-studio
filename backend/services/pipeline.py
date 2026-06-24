@@ -23,7 +23,7 @@ import shutil
 import sys
 import traceback
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from core.config import settings
 from db.enums import GateKind, JobStatus, StepStatus
@@ -49,6 +49,29 @@ LAST_STEP = 10
 # --------------------------------------------------------------------------- #
 def job_folder(job_id) -> str:
     return os.path.join(settings.JOB_FILES_DIR, str(job_id))
+
+
+_STEP_ARTIFACTS = {
+    1: ["transcripts"], 2: ["translated.txt"], 3: ["speakers.txt"],
+    4: ["extracted.txt", "bulk-input-english.txt"],
+    5: ["analysis/bulk-input.csv"], 6: ["analysis/bulk-input-analysis.csv"],
+    7: ["analysis/mapped_master_file.csv"], 8: ["analysis/stocks_with_cmp.csv"],
+    9: ["analysis/stocks_with_charts.csv", "analysis/failed_charts.json", "charts"],
+    10: ["pdf"],
+}
+
+
+def _clear_artifacts_from(job_id, start_step: int) -> None:
+    """Remove on-disk outputs for start_step..10 so reruns don't show stale data."""
+    jf = job_folder(job_id)
+    for n in range(start_step, LAST_STEP + 1):
+        for rel in _STEP_ARTIFACTS.get(n, []):
+            path = os.path.join(jf, rel)
+            with contextlib.suppress(OSError):
+                if os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=True)
+                elif os.path.isfile(path):
+                    os.remove(path)
 
 
 def _resolve_audio_path(job, uf) -> str | None:
@@ -320,6 +343,18 @@ def run_pipeline(job_id, start_step: int = 1) -> None:
         job.error_message = None
         db.commit()
         jlog(job_id, None, "pipeline_start", start_step=start_step)
+
+        # Reset this step and every later one so stale done-ticks/outputs clear
+        # immediately (a reload should look like a fresh run from this point).
+        db.execute(
+            update(JobStep)
+            .where(JobStep.job_id == job_id, JobStep.step_no >= start_step)
+            .values(status=StepStatus.pending, log_tail=None, error=None,
+                    output_paths=None, started_at=None, finished_at=None)
+        )
+        db.commit()
+        _clear_artifacts_from(job_id, start_step)
+        _emit(job_id, {"type": "step", "step_no": start_step, "step_key": STEP_KEYS[start_step], "status": "reset"})
 
         for n in range(start_step, LAST_STEP + 1):
             job.current_step = n
