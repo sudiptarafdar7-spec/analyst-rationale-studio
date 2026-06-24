@@ -14,7 +14,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from core.config import settings
@@ -87,6 +87,9 @@ def _set_analysts(db: Session, job: Job, analyst_ids: list[uuid.UUID]) -> None:
 
 def _to_list_item(db: Session, job: Job) -> JobListItem:
     platform = db.get(Platform, job.platform_id) if job.platform_id else None
+    started_at = db.scalar(
+        select(func.min(JobStep.started_at)).where(JobStep.job_id == job.id)
+    )
     return JobListItem(
         id=job.id,
         platform_id=job.platform_id,
@@ -102,6 +105,7 @@ def _to_list_item(db: Session, job: Job) -> JobListItem:
         status=job.status,
         gate=job.gate,
         current_step=job.current_step,
+        started_at=started_at,
         audio_url=_audio_url(job),
         pdf_url=(f"/api/jobs/{job.id}/pdf" if job.output_pdf_path else None),
         created_at=job.created_at,

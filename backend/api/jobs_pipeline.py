@@ -17,13 +17,13 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from api.jobs import _ensure_access
 from core.config import settings
 from core.security import decode_access_token
-from db.enums import JobStatus
+from db.enums import GateKind, JobStatus
 from db.models import Job, JobStep, User
 from db.session import SessionLocal, get_db
 from core.deps import get_current_user, get_optional_user
@@ -212,6 +212,36 @@ def get_pdf(
         raise HTTPException(status_code=404, detail="PDF not available.")
     return FileResponse(job.output_pdf_path, media_type="application/pdf",
                         filename=os.path.basename(job.output_pdf_path))
+
+
+@router.post("/{job_id}/reset")
+def reset_job(
+    job_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Discard the rationale run and return the entry to 'pending' (keeps audio),
+    so Media Presence shows the Start button again."""
+    job = _load_owned(job_id, db, user)
+    db.execute(delete(JobStep).where(JobStep.job_id == job_id))
+    job.status = JobStatus.pending
+    job.gate = GateKind.none
+    job.current_step = 0
+    job.error_message = None
+    job.output_pdf_path = None
+    db.commit()
+    import shutil
+    jf = pipeline.job_folder(job_id)
+    for name in ("transcripts", "analysis", "charts", "pdf"):
+        shutil.rmtree(os.path.join(jf, name), ignore_errors=True)
+    if os.path.isdir(jf):
+        for fn in os.listdir(jf):
+            if fn.endswith(".txt"):
+                try:
+                    os.remove(os.path.join(jf, fn))
+                except OSError:
+                    pass
+    return {"status": "pending"}
 
 
 @router.post("/{job_id}/save")

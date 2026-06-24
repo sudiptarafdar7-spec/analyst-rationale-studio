@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Check,
   ChevronDown,
@@ -218,6 +218,7 @@ const EMPTY: FormState = {
 export default function MediaPresence() {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const audioRef = useRef<HTMLInputElement>(null);
 
   const jobs = useQuery({ queryKey: ["jobs"], queryFn: () => api.get<Job[]>("/jobs") });
@@ -282,6 +283,17 @@ export default function MediaPresence() {
     setProgress(null);
     setOpen(true);
   };
+
+  // Open the edit modal when navigated here from AI Rationale (?edit=<id>).
+  useEffect(() => {
+    const editId = searchParams.get("edit");
+    if (!editId || !jobs.data) return;
+    const j = jobs.data.find((x) => x.id === editId);
+    if (j) openEdit(j);
+    searchParams.delete("edit");
+    setSearchParams(searchParams, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, jobs.data]);
 
   const setType = (t: PlatformType) =>
     setForm((s) => ({

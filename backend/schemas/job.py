@@ -44,6 +44,7 @@ class JobListItem(BaseModel):
     status: JobStatus
     gate: GateKind
     current_step: int
+    started_at: dt.datetime | None = None
     audio_url: str | None = None
     pdf_url: str | None = None
     created_at: dt.datetime
