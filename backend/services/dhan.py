@@ -31,6 +31,7 @@ from tools.step08_fetch_cmp.runtime import (  # re-exported normalizers + cmp en
 )
 from tools.step09_generate_charts.runtime import (
     IST,
+    _post,
     add_indicators,
     get_daily_history,
     get_intraday_1m,
@@ -39,6 +40,7 @@ from tools.step09_generate_charts.runtime import (
     parse_date,
     parse_time,
     resample_to,
+    zip_candles,
 )
 from utils.database import get_api_key
 
@@ -49,6 +51,8 @@ __all__ = [
     "fetch_cmp",
     "fetch_chart_df",
     "render_chart_png",
+    "render_chart_range",
+    "exchange_segment",
 ]
 
 GENERATED_CHARTS_SUBDIR = "generated-charts"
@@ -177,3 +181,76 @@ def render_chart_png(
     make_premium_chart(df, meta, save_path, cmp_value, cmp_datetime)
     public_url = f"/uploads/{GENERATED_CHARTS_SUBDIR}/{fname}"
     return save_path, public_url, cmp_value
+
+
+# --------------------------------------------------------------------------- #
+# Standalone Generate Chart: instrument-aware, date-range, daily/weekly/monthly
+# --------------------------------------------------------------------------- #
+def exchange_segment(exchange: str, instrument: str) -> str:
+    """Map a master row's exchange + instrument to a Dhan exchangeSegment enum."""
+    ex = (exchange or "NSE").upper().strip()
+    inst = (instrument or "EQUITY").upper().strip()
+    if inst == "INDEX":
+        return "IDX_I"
+    if inst == "EQUITY":
+        return f"{ex}_EQ" if ex in ("NSE", "BSE") else "NSE_EQ"
+    if inst in ("FUTIDX", "OPTIDX", "FUTSTK", "OPTSTK"):
+        return f"{ex}_FNO" if ex in ("NSE", "BSE") else "NSE_FNO"
+    if inst in ("FUTCUR", "OPTCUR"):
+        return f"{ex}_CURRENCY" if ex in ("NSE", "BSE") else "NSE_CURRENCY"
+    if inst in ("FUTCOM", "OPTFUT"):
+        return "MCX_COMM"
+    return f"{ex}_EQ"
+
+
+_RESAMPLE = {"WEEKLY": "W-FRI", "MONTHLY": "ME"}
+
+
+def render_chart_range(security_id: str, exchange: str, instrument: str, chart_type: str,
+                       from_date: str, to_date: str, short_name: str = "") -> tuple[str, str, float | None]:
+    """Render a premium chart for any instrument over a date range.
+
+    Dhan historical returns daily candles; Weekly/Monthly are resampled here.
+    Returns (absolute_path, public_url, cmp).
+    """
+    headers = get_headers()
+    sid = str(security_id).split(".")[0].strip()
+    if not sid or sid == "nan":
+        raise HTTPException(status_code=400, detail="A valid security_id is required.")
+    instrument = (instrument or "EQUITY").upper().strip()
+    seg = exchange_segment(exchange, instrument)
+
+    f_obj = parse_date(normalize_date_format(from_date) or from_date)
+    t_obj = parse_date(normalize_date_format(to_date) or to_date)
+    if t_obj < f_obj:
+        raise HTTPException(status_code=400, detail="To date is before From date.")
+
+    payload = {
+        "securityId": sid, "exchangeSegment": seg, "instrument": instrument,
+        "expiryCode": 0, "oi": False,
+        "fromDate": f_obj.strftime("%Y-%m-%d"),
+        "toDate": (t_obj + timedelta(days=1)).strftime("%Y-%m-%d"),  # toDate is non-inclusive
+    }
+    df = zip_candles(_post("/charts/historical", payload, headers))
+    if df is None or df.empty:
+        raise HTTPException(status_code=404, detail="No data for this scrip / date range.")
+
+    rule = _RESAMPLE.get((chart_type or "Daily").upper())
+    if rule:
+        df = (df.resample(rule)
+              .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
+              .dropna(subset=["open", "high", "low", "close"]))
+    if df.empty:
+        raise HTTPException(status_code=404, detail="Not enough data to draw this timeframe.")
+
+    df = add_indicators(df, [20, 50, 100, 200], 14)
+    cmp_value = round(float(df["close"].iloc[-1]), 2)
+
+    out_dir = os.path.abspath(os.path.join(settings.UPLOAD_DIR, GENERATED_CHARTS_SUBDIR))
+    os.makedirs(out_dir, exist_ok=True)
+    fname = f"{sid}_{(chart_type or 'Daily')}_{uuid.uuid4().hex[:8]}.png"
+    save_path = os.path.join(out_dir, fname)
+    meta = {"SHORT NAME": short_name or sid, "CHART TYPE": (chart_type or "Daily").title(),
+            "EXCHANGE": (exchange or "NSE").upper()}
+    make_premium_chart(df, meta, save_path, cmp_value, df.index[-1])
+    return save_path, f"/uploads/{GENERATED_CHARTS_SUBDIR}/{fname}", cmp_value

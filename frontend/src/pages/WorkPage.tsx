@@ -347,8 +347,8 @@ function StockSymbolCell({ value, onChange, onPick }: { value: string; onChange:
     tRef.current = window.setTimeout(async () => {
       setLoading(true);
       try {
-        const r = await api.get<{ results: MasterHit[] }>(`/tools/master-search?q=${encodeURIComponent(q.trim())}&limit=12`);
-        setResults(r.results);
+        const r = await api.get<MasterHit[]>(`/tools/master-search?q=${encodeURIComponent(q.trim())}&limit=12`);
+        setResults(r);
       } catch { setResults([]); } finally { setLoading(false); }
     }, 250);
   };
