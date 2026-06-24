@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowLeft, Check, CheckCircle2, ChevronRight, CloudUpload,
-  Download, Eye, EyeOff, Loader2, Play, RotateCcw, Save, Sparkles, Trash2, X,
+  AlertTriangle, ArrowLeft, CalendarClock, Check, CheckCircle2, ChevronRight, CloudUpload,
+  Download, Eye, EyeOff, Facebook, Globe, Instagram, Loader2, MessageCircle, Play,
+  RotateCcw, Save, Send, Trash2, Users, X, Youtube,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import Modal from "../components/Modal";
 import StepStage from "../components/StepStage";
@@ -28,6 +30,11 @@ interface JobDetail {
   id: string;
   title: string | null;
   platform_name: string | null;
+  platform_type: string | null;
+  platform_logo: string | null;
+  video_date: string | null;
+  video_time: string | null;
+  extract_all_stocks?: boolean;
   status: JobStatus;
   gate: GateKind;
   current_step: number;
@@ -36,6 +43,25 @@ interface JobDetail {
   pdf_url: string | null;
   analysts?: { id: string; name: string; avatar_path: string | null }[];
   steps: StepOut[];
+}
+
+const PMETA: Record<string, { label: string; icon: LucideIcon; color: string }> = {
+  youtube: { label: "YouTube", icon: Youtube, color: "text-red-600 bg-red-50" },
+  facebook: { label: "Facebook", icon: Facebook, color: "text-blue-600 bg-blue-50" },
+  instagram: { label: "Instagram", icon: Instagram, color: "text-pink-600 bg-pink-50" },
+  telegram: { label: "Telegram", icon: Send, color: "text-sky-600 bg-sky-50" },
+  whatsapp: { label: "WhatsApp", icon: MessageCircle, color: "text-emerald-600 bg-emerald-50" },
+  other: { label: "Other", icon: Globe, color: "text-slate-600 bg-slate-100" },
+};
+
+function fmtDateTime(d: string | null, t: string | null): string {
+  if (!d) return "Date not set";
+  const date = new Date(`${d}T${t ?? "00:00:00"}`);
+  if (Number.isNaN(date.getTime())) return `${d}${t ? " " + t : ""}`;
+  return date.toLocaleString(undefined, {
+    day: "2-digit", month: "short", year: "numeric",
+    ...(t ? { hour: "2-digit", minute: "2-digit" } : {}),
+  });
 }
 
 const STEP_LABELS: Record<number, string> = {
@@ -120,12 +146,35 @@ export default function WorkPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <button className="btn-ghost px-2 py-2" onClick={() => navigate("/ai-rationale")} aria-label="Back"><ArrowLeft size={18} /></button>
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700"><Sparkles size={20} /></span>
+          {(() => { const m = PMETA[data.platform_type ?? "other"] ?? PMETA.other; const PIcon = m.icon;
+            return <span title={m.label} className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${m.color}`}><PIcon size={19} /></span>; })()}
+          {data.platform_logo ? (
+            <img src={data.platform_logo} alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover ring-1 ring-slate-200" />
+          ) : (
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-sm font-semibold text-slate-500">{(data.platform_name ?? "?")[0]?.toUpperCase()}</span>
+          )}
           <div className="min-w-0">
-            <h1 className="truncate text-2xl font-bold tracking-tight">{data.title || "Rationale"}</h1>
-            <p className="truncate text-sm text-slate-500">{data.platform_name ?? ""} · <StatusBadge status={data.status} /></p>
+            <div className="flex items-center gap-2">
+              <h1 className="truncate text-xl font-bold tracking-tight">{data.platform_name ?? "Rationale"}</h1>
+              <StatusBadge status={data.status} />
+            </div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+              <span className="inline-flex items-center gap-1"><CalendarClock size={12} /> {fmtDateTime(data.video_date, data.video_time)}</span>
+              {(data.extract_all_stocks || (data.analysts?.length ?? 0) > 0) && <span className="text-slate-300">·</span>}
+              {data.extract_all_stocks ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600"><Users size={11} /> All analysts</span>
+              ) : (data.analysts ?? []).map((a) => (
+                <span key={a.id} title={a.name} className="inline-flex items-center gap-1 rounded-full bg-slate-100 py-0.5 pl-0.5 pr-2 font-medium text-slate-700">
+                  {a.avatar_path
+                    ? <img src={a.avatar_path} alt="" className="h-4 w-4 rounded-full object-cover" />
+                    : <span className="grid h-4 w-4 place-items-center rounded-full bg-brand-100 text-[8px] font-semibold text-brand-700">{a.name[0]?.toUpperCase()}</span>}
+                  <span className="max-w-[100px] truncate">{a.name}</span>
+                </span>
+              ))}
+            </div>
+            {data.title && <p className="mt-0.5 truncate text-xs text-slate-400" title={data.title}>{data.title}</p>}
           </div>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -232,12 +281,13 @@ function ArtifactPreview({ jobId, step, stepStatus }: { jobId: string; step: num
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [state, setState] = useState<"idle" | "loading" | "empty">("idle");
 
-  // Collapse + reset whenever the active step changes OR its status changes
-  // (e.g. a rerun flips it back to pending, so old output must be dropped).
+  // Reset whenever the active step changes OR its status changes (e.g. a rerun
+  // flips it back to pending, so old output must be dropped). The final PDF
+  // auto-opens once it's ready; other steps stay collapsed until "View".
   useEffect(() => {
-    setOpen(false); setText(null); setState("idle");
+    setOpen(isPdf && stepStatus === "done"); setText(null); setState("idle");
     setPdfUrl((u) => { if (u) URL.revokeObjectURL(u); return null; });
-  }, [step, stepStatus]);
+  }, [step, stepStatus, isPdf]);
 
   // Lazy-load only when the user expands it (each step keeps its own output).
   useEffect(() => {
