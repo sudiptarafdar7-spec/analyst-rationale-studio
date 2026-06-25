@@ -32,27 +32,42 @@ def parse_timecode(value: str | None) -> float | None:
         return None
 
 
+def ffmpeg_exe() -> str | None:
+    """Resolve an ffmpeg binary: system PATH first, else the one bundled with
+    the imageio-ffmpeg package (a static build, no system install needed)."""
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def have_ffmpeg() -> bool:
-    return shutil.which("ffmpeg") is not None
+    return ffmpeg_exe() is not None
 
 
 def trim_audio(src: str, dst: str, start: float, end: float) -> None:
     """Cut src[start..end] (seconds) into dst. Re-encodes for sample accuracy.
 
-    Uses input seeking (-ss before -i) for speed plus a relative -to so the cut
+    Uses input seeking (-ss before -i) for speed plus a relative -t so the cut
     stays accurate on large files. Raises RuntimeError on any failure.
     """
-    if not have_ffmpeg():
+    exe = ffmpeg_exe()
+    if not exe:
         raise RuntimeError(
-            "Audio trimming requires ffmpeg, which was not found on the server. "
-            "Install ffmpeg or upload pre-trimmed audio."
+            "Audio trimming requires ffmpeg. Install the 'imageio-ffmpeg' package "
+            "(pip install imageio-ffmpeg) or a system ffmpeg, then retry."
         )
     if end <= start:
         raise RuntimeError("End time must be after start time.")
     duration = end - start
     os.makedirs(os.path.dirname(os.path.abspath(dst)), exist_ok=True)
     cmd = [
-        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+        exe, "-y", "-hide_banner", "-loglevel", "error",
         "-ss", f"{start:.3f}", "-i", src, "-t", f"{duration:.3f}",
         "-vn", dst,
     ]

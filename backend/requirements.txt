@@ -18,6 +18,7 @@ pytz
 python-dateutil
 matplotlib
 mplfinance
+imageio-ffmpeg
 reportlab
 Pillow
 openai
@@ -27,5 +28,4 @@ deepgram-sdk>=7
 google-api-python-client
 celery[redis]
 redis
-websockets
-pytest
+web
