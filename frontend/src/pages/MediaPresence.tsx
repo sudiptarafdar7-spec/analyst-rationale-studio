@@ -7,10 +7,12 @@ import {
   CloudUpload,
   Facebook,
   FileDown,
+  FileMusic,
   Filter,
   Globe,
   Headphones,
   Instagram,
+  Link2,
   Loader2,
   MessageCircle,
   Pencil,
@@ -139,6 +141,13 @@ function ytEmbedId(url: string | null): string | null {
     url.match(/[?&]v=([\w-]{11})/) ||
     url.match(/youtube\.com\/(?:shorts|live|embed)\/([\w-]{11})/);
   return m ? m[1] : null;
+}
+
+function fmtBytes(n: number): string {
+  if (!n) return "0 B";
+  const u = ["B", "KB", "MB", "GB"];
+  const i = Math.min(u.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
+  return `${(n / 1024 ** i).toFixed(i ? 1 : 0)} ${u[i]}`;
 }
 
 function fmtDateTime(d: string | null, t: string | null): string {
@@ -552,6 +561,7 @@ export default function MediaPresence() {
       <Modal open={open} onClose={() => setOpen(false)} title={isEdit ? "Edit entry" : "Add media presence"}
         description="Pick the platform and channel, add the video/audio, and choose target analysts." maxWidth="max-w-2xl">
         <div className="space-y-5">
+          {/* Platform */}
           <div>
             <label className="label">Platform</label>
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
@@ -569,64 +579,15 @@ export default function MediaPresence() {
             </div>
           </div>
 
-          <div>
-            <label className="label">Channel</label>
-            <div className="relative">
-              <button type="button" onClick={() => setChannelOpen((o) => !o)}
-                className="input flex items-center justify-between gap-2 text-left">
-                {selectedChannel ? (
-                  <span className="flex items-center gap-2 truncate">
-                    {selectedChannel.channel_logo_path ? (
-                      <img src={selectedChannel.channel_logo_path} alt="" className="h-6 w-6 shrink-0 rounded-md object-cover" />
-                    ) : (
-                      <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-md ${PMETA[selectedChannel.platform_type].color}`}>
-                        {(() => { const I = PMETA[selectedChannel.platform_type].icon; return <I size={12} />; })()}
-                      </span>
-                    )}
-                    <span className="truncate text-slate-700">{selectedChannel.channel_name}</span>
-                  </span>
-                ) : (
-                  <span className="text-slate-400">
-                    {channels.length ? `Select a ${PMETA[form.platform_type].label} channel…` : `No ${PMETA[form.platform_type].label} channels yet`}
-                  </span>
-                )}
-                <ChevronDown size={16} className="shrink-0 text-slate-400" />
-              </button>
-              {channelOpen && (
-                <>
-                  <button className="fixed inset-0 z-10 cursor-default" onClick={() => setChannelOpen(false)} aria-hidden tabIndex={-1} />
-                  <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                    {channels.length === 0 ? (
-                      <div className="px-3 py-2 text-sm text-slate-400">Add one under Manage Platform first.</div>
-                    ) : (
-                      channels.map((p) => {
-                        const I = PMETA[p.platform_type].icon;
-                        return (
-                          <button key={p.id} type="button"
-                            onClick={() => { setForm((s) => ({ ...s, platform_id: p.id })); setChannelOpen(false); }}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50">
-                            {p.channel_logo_path ? (
-                              <img src={p.channel_logo_path} alt="" className="h-6 w-6 shrink-0 rounded-md object-cover" />
-                            ) : (
-                              <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-md ${PMETA[p.platform_type].color}`}><I size={12} /></span>
-                            )}
-                            <span className="truncate text-slate-700">{p.channel_name}</span>
-                            {form.platform_id === p.id && <Check size={14} className="ml-auto text-brand" />}
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
+          {/* Video URL */}
           <div>
             <label className="label">Video URL {form.platform_type === "youtube" && <span className="text-slate-400">(fetch to auto-detect channel + details)</span>}</label>
             <div className="flex gap-2">
-              <input className="input" value={form.youtube_url} placeholder="https://youtu.be/…"
-                onChange={(e) => setForm((s) => ({ ...s, youtube_url: e.target.value }))} />
+              <div className="relative flex-1">
+                <Link2 size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input className="input pl-9" value={form.youtube_url} placeholder="https://youtu.be/…"
+                  onChange={(e) => setForm((s) => ({ ...s, youtube_url: e.target.value }))} />
+              </div>
               {form.platform_type === "youtube" && (
                 <button type="button" className="btn-ghost whitespace-nowrap" disabled={fetching || !form.youtube_url.trim()} onClick={fetchDetails}>
                   {fetching ? <Loader2 size={16} className="animate-spin" /> : <Youtube size={16} />} Fetch details
@@ -635,59 +596,141 @@ export default function MediaPresence() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <label className="label">Title</label>
-              <input className="input" value={form.title} onChange={(e) => setForm((s) => ({ ...s, title: e.target.value }))} placeholder="Show / segment title" />
+          {/* Channel · Date · Time */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-12">
+            <div className="sm:col-span-6">
+              <label className="label">Channel</label>
+              <div className="relative">
+                <button type="button" onClick={() => setChannelOpen((o) => !o)}
+                  className="input flex items-center justify-between gap-2 text-left">
+                  {selectedChannel ? (
+                    <span className="flex items-center gap-2 truncate">
+                      {selectedChannel.channel_logo_path ? (
+                        <img src={selectedChannel.channel_logo_path} alt="" className="h-6 w-6 shrink-0 rounded-md object-cover" />
+                      ) : (
+                        <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-md ${PMETA[selectedChannel.platform_type].color}`}>
+                          {(() => { const I = PMETA[selectedChannel.platform_type].icon; return <I size={12} />; })()}
+                        </span>
+                      )}
+                      <span className="truncate text-slate-700">{selectedChannel.channel_name}</span>
+                    </span>
+                  ) : (
+                    <span className="truncate text-slate-400">
+                      {channels.length ? `Select a ${PMETA[form.platform_type].label} channel…` : `No ${PMETA[form.platform_type].label} channels yet`}
+                    </span>
+                  )}
+                  <ChevronDown size={16} className="shrink-0 text-slate-400" />
+                </button>
+                {channelOpen && (
+                  <>
+                    <button className="fixed inset-0 z-10 cursor-default" onClick={() => setChannelOpen(false)} aria-hidden tabIndex={-1} />
+                    <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                      {channels.length === 0 ? (
+                        <div className="px-3 py-2 text-sm text-slate-400">Add one under Manage Platform first.</div>
+                      ) : (
+                        channels.map((p) => {
+                          const I = PMETA[p.platform_type].icon;
+                          return (
+                            <button key={p.id} type="button"
+                              onClick={() => { setForm((s) => ({ ...s, platform_id: p.id })); setChannelOpen(false); }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50">
+                              {p.channel_logo_path ? (
+                                <img src={p.channel_logo_path} alt="" className="h-6 w-6 shrink-0 rounded-md object-cover" />
+                              ) : (
+                                <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-md ${PMETA[p.platform_type].color}`}><I size={12} /></span>
+                              )}
+                              <span className="truncate text-slate-700">{p.channel_name}</span>
+                              {form.platform_id === p.id && <Check size={14} className="ml-auto text-brand" />}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
-            <div>
+            <div className="sm:col-span-3">
               <label className="label">Date</label>
               <input type="date" className="input" value={form.video_date} onChange={(e) => setForm((s) => ({ ...s, video_date: e.target.value }))} />
             </div>
-            <div>
+            <div className="sm:col-span-3">
               <label className="label">Time</label>
               <input type="time" step={1} className="input" value={form.video_time} onChange={(e) => setForm((s) => ({ ...s, video_time: e.target.value }))} />
             </div>
           </div>
 
+          {/* Title */}
+          <div>
+            <label className="label">Title</label>
+            <input className="input" value={form.title} onChange={(e) => setForm((s) => ({ ...s, title: e.target.value }))} placeholder="Show / segment title" />
+          </div>
+
+          {/* Audio */}
           {!isEdit && (
             <div>
-              <label className="label">Audio file</label>
-              <div onClick={() => audioRef.current?.click()} onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => { e.preventDefault(); pickAudio(e.dataTransfer.files?.[0]); }}
-                className="flex cursor-pointer items-center gap-3 rounded-xl border-2 border-dashed border-slate-200 px-4 py-5 transition hover:border-brand/50 hover:bg-brand-50/40">
-                <span className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 text-slate-500"><CloudUpload size={20} /></span>
-                <div className="min-w-0 flex-1">
-                  {form.audioFile ? <p className="truncate text-sm font-medium text-slate-700">{form.audioFile.name}</p>
-                    : <p className="text-sm text-slate-500">Drop an mp3 / m4a / wav / aac, or click to browse</p>}
+              <label className="label">Audio</label>
+              {form.audioFile ? (
+                <div className="flex items-center gap-3 rounded-xl border border-brand/30 bg-gradient-to-br from-brand-50 to-white px-4 py-3 shadow-sm">
+                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-brand text-white shadow-sm"><FileMusic size={22} /></span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-slate-800">{form.audioFile.name}</p>
+                    <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
+                      <span className="rounded bg-white px-1.5 py-0.5 font-semibold uppercase tracking-wide text-slate-500 ring-1 ring-slate-200">{form.audioFile.name.split(".").pop() ?? "audio"}</span>
+                      {fmtBytes(form.audioFile.size)}
+                    </p>
+                    {progress !== null && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white ring-1 ring-slate-200">
+                          <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${progress}%` }} />
+                        </div>
+                        <span className="w-9 text-right text-[10px] font-semibold text-brand">{progress}%</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button type="button" onClick={() => audioRef.current?.click()} className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-brand transition hover:bg-white">Replace</button>
+                    <button type="button" onClick={() => setForm((s) => ({ ...s, audioFile: null }))} className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-danger" aria-label="Remove audio"><X size={15} /></button>
+                  </div>
                 </div>
-              </div>
-              <input ref={audioRef} type="file" accept={AUDIO_ACCEPT} className="hidden" onChange={(e) => pickAudio(e.target.files?.[0] ?? undefined)} />
-              {progress !== null && (
-                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                  <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${progress}%` }} />
+              ) : (
+                <div onClick={() => audioRef.current?.click()} onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { e.preventDefault(); pickAudio(e.dataTransfer.files?.[0]); }}
+                  className="flex cursor-pointer items-center gap-4 rounded-xl border-2 border-dashed border-slate-200 px-4 py-5 transition hover:border-brand/50 hover:bg-brand-50/40">
+                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500"><CloudUpload size={22} /></span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-600">Drop audio here, or <span className="text-brand">browse</span></p>
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {["MP3", "M4A", "WAV", "AAC"].map((x) => (
+                        <span key={x} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-slate-500">{x}</span>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
+              <input ref={audioRef} type="file" accept={AUDIO_ACCEPT} className="hidden" onChange={(e) => pickAudio(e.target.files?.[0] ?? undefined)} />
             </div>
           )}
 
-          <div>
-            <label className="label">Stocks</label>
-            <button type="button" onClick={() => setForm((s) => ({ ...s, extract_all_stocks: !s.extract_all_stocks }))}
-              className={`flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-sm transition ${form.extract_all_stocks ? "border-brand bg-brand-50" : "border-slate-200"}`}>
-              <span className="text-slate-700">Extract stocks of all analysts in this video</span>
-              <span className={`relative h-5 w-9 rounded-full transition ${form.extract_all_stocks ? "bg-brand" : "bg-slate-300"}`}>
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${form.extract_all_stocks ? "left-[18px]" : "left-0.5"}`} />
-              </span>
-            </button>
-          </div>
-
-          {!form.extract_all_stocks && (
+          {/* Stocks + Target analysts */}
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="label">Target analysts <span className="text-slate-400">(select one or more)</span></label>
-              {analysts.data && analysts.data.length > 0 ? (
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-                  <div className="relative sm:w-60 sm:shrink-0">
+              <label className="label">Stocks</label>
+              <button type="button" onClick={() => setForm((s) => ({ ...s, extract_all_stocks: !s.extract_all_stocks }))}
+                className={`flex h-[46px] w-full items-center justify-between gap-2 rounded-xl border px-3 text-sm transition ${form.extract_all_stocks ? "border-brand bg-brand-50" : "border-slate-200 hover:border-slate-300"}`}>
+                <span className="text-left text-slate-700">Extract stocks of all analysts</span>
+                <span className={`relative h-5 w-9 shrink-0 rounded-full transition ${form.extract_all_stocks ? "bg-brand" : "bg-slate-300"}`}>
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${form.extract_all_stocks ? "left-[18px]" : "left-0.5"}`} />
+                </span>
+              </button>
+            </div>
+            <div>
+              <label className="label">Target analysts {!form.extract_all_stocks && <span className="text-slate-400">(one or more)</span>}</label>
+              {form.extract_all_stocks ? (
+                <div className="flex h-[46px] items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-3 text-sm text-slate-500"><Users size={15} /> All analysts will be extracted</div>
+              ) : analysts.data && analysts.data.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="relative">
                     <button type="button" onClick={() => setAnalystOpen((o) => !o)} className="input flex items-center justify-between gap-2 text-left">
                       <span className="text-slate-400">Add analyst…</span>
                       <ChevronDown size={16} className="shrink-0 text-slate-400" />
@@ -717,11 +760,9 @@ export default function MediaPresence() {
                       </>
                     )}
                   </div>
-                  <div className="flex flex-1 flex-wrap gap-2">
-                    {form.analyst_ids.length === 0 ? (
-                      <span className="self-center text-sm text-slate-400">No analysts selected yet.</span>
-                    ) : (
-                      form.analyst_ids.map((id) => {
+                  {form.analyst_ids.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {form.analyst_ids.map((id) => {
                         const a = analysts.data!.find((x) => x.id === id);
                         if (!a) return null;
                         return (
@@ -735,15 +776,15 @@ export default function MediaPresence() {
                             <button type="button" onClick={() => toggleAnalyst(id)} className="text-slate-400 hover:text-danger" aria-label={`Remove ${a.name}`}><X size={14} /></button>
                           </span>
                         );
-                      })
-                    )}
-                  </div>
+                      })}
+                    </div>
+                  )}
                 </div>
               ) : (
-                <p className="flex items-center gap-2 text-sm text-slate-400"><Users size={14} /> No analysts yet — add them under Analysts Profile.</p>
+                <p className="flex items-center gap-2 rounded-xl border border-dashed border-slate-200 px-3 py-2.5 text-sm text-slate-400"><Users size={14} /> No analysts yet — add under Analysts Profile.</p>
               )}
             </div>
-          )}
+          </div>
 
           <div className="flex justify-end gap-2 pt-1">
             <button className="btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
