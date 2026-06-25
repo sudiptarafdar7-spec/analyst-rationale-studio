@@ -37,6 +37,16 @@ class AiTask(str, enum.Enum):
     speaker_detect = "speaker_detect"
     extract = "extract"
     polish = "polish"
+    watchlist = "watchlist"
+
+
+class CallType(str, enum.Enum):
+    """Standardised recommendation extracted from an analyst's rationale."""
+
+    buy = "buy"
+    hold = "hold"
+    sell = "sell"
+    no_view = "no_view"
 
 
 class UploadedFileType(str, enum.Enum):
@@ -80,6 +90,7 @@ ENUM_LABELS: dict[str, list[str]] = {
     "platform_type": [e.value for e in PlatformType],
     "api_provider": [e.value for e in ApiProvider],
     "ai_task": [e.value for e in AiTask],
+    "call_type": [e.value for e in CallType],
     "uploaded_file_type": [e.value for e in UploadedFileType],
     "job_status": [e.value for e in JobStatus],
     "gate_kind": [e.value for e in GateKind],

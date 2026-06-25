@@ -22,6 +22,7 @@ from api.pdf_template import router as pdf_template_router
 from api.platforms import router as platforms_router
 from api.saved import router as saved_router
 from api.tools import router as tools_router
+from api.watchlist import router as watchlist_router
 from api.users import router as users_router
 from api.youtube import router as youtube_router
 from core.config import settings
@@ -61,9 +62,23 @@ def _ensure_db_schema() -> None:
         print(f"⚠️  Alembic upgrade skipped/failed ({exc}); ensuring tables via metadata")
 
     try:
+        from sqlalchemy import text
+
         from db.base import Base
         from db.session import engine
         import db.models  # noqa: F401  (registers tables)
+
+        # Enum changes can't be applied by create_all; do them idempotently first
+        # so watchlist_calls (and the ai_task 'watchlist' mapping) can be built.
+        with engine.begin() as conn:
+            conn.execute(text(
+                "DO $$ BEGIN "
+                "IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'call_type') THEN "
+                "CREATE TYPE call_type AS ENUM ('buy', 'hold', 'sell', 'no_view'); "
+                "END IF; END $$;"
+            ))
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TYPE ai_task ADD VALUE IF NOT EXISTS 'watchlist'"))
 
         Base.metadata.create_all(bind=engine)  # creates only missing tables
         print("✅ Ensured database tables via metadata")
@@ -95,6 +110,7 @@ app.include_router(jobs_router, prefix="/api")
 app.include_router(jobs_pipeline_router, prefix="/api")
 app.include_router(jobs_review_router, prefix="/api")
 app.include_router(saved_router, prefix="/api")
+app.include_router(watchlist_router, prefix="/api")
 app.include_router(ws_router)  # WS /ws/jobs/{id} (no /api prefix)
 
 # Serve uploaded files (avatars, logos, ...) from the upload dir.

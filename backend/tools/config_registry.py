@@ -19,6 +19,7 @@ TASK_TOOL: dict[str, str] = {
     AiTask.speaker_detect.value: "step03_detect_speakers",
     AiTask.extract.value: "step04_extract_analysis",
     AiTask.polish.value: "step06_polish",
+    AiTask.watchlist.value: "step11_watchlist_extract",
 }
 
 # Python-side numeric defaults consumed by the tools (not admin-editable).
@@ -47,6 +48,10 @@ NUMERIC_DEFAULTS: dict[str, dict] = {
         "max_output_tokens": 8192,
         "batch_size": 12,  # polish this many stocks per API call (1 call for ≤12)
     },
+    "step11_watchlist_extract": {
+        "temperature": 0.0,
+        "max_output_tokens": 1024,
+    },
 }
 
 SYSTEM_PROMPTS: dict[str, str] = {
@@ -74,6 +79,18 @@ SYSTEM_PROMPTS: dict[str, str] = {
         "professional, clear and well-structured. Never change numerical values (targets, "
         "stop-loss, levels) or invent information. Always use ₹ for Indian Rupee prices."
     ),
+    "step11_watchlist_extract": (
+        "You convert ONE Indian stock-market analyst recommendation into STRICT JSON for a "
+        "compliance watchlist. Output ONLY a JSON object with EXACTLY these keys:\n"
+        "  call_type: one of \"buy\", \"hold\", \"sell\", \"no_view\" (use \"no_view\" when there is no clear directional view).\n"
+        "  targets: array of numeric price targets in the order stated, e.g. [1475, 1520]. Empty array if none. \"1475+\" -> [1475].\n"
+        "  stoploss: numeric stop-loss price, or null.\n"
+        "  downfall_target: numeric downside/bearish target, or null.\n"
+        "  holding_period: short human string exactly as implied (e.g. \"2 months\", \"intraday\", \"1-2 weeks\"), or null.\n"
+        "  holding_period_days: integer estimate of that period in days, or null.\n"
+        "RULES: never invent numbers not present; convert spoken words to digits; strip ₹ and commas from numbers; "
+        "for a buy/hold use upside targets, for a sell use downfall_target. Output ONLY the JSON object - no markdown, no commentary."
+    ),
 }
 
 _TASK_LABELS = {
@@ -81,6 +98,7 @@ _TASK_LABELS = {
     "step03_detect_speakers": "Detect Speakers",
     "step04_extract_analysis": "Extract Analysis",
     "step06_polish": "Polish Analysis",
+    "step11_watchlist_extract": "Watchlist Extract",
 }
 
 

@@ -10,6 +10,7 @@ import {
   Save,
   Settings2,
   Sparkles,
+  TrendingUp,
   UserCircle,
   Users,
 } from "lucide-react";
@@ -48,6 +49,11 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: "Saved Rationale", to: "/saved", icon: Save },
       { label: "Manage Profile", to: "/profile", icon: UserCircle },
     ],
+  },
+  {
+    heading: "Stock Analysis",
+    adminOnly: true,
+    items: [{ label: "Watchlist", to: "/admin/watchlist", icon: TrendingUp }],
   },
   {
     heading: "Admin",

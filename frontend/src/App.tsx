@@ -18,6 +18,7 @@ import AnalystsProfile from "./pages/admin/AnalystsProfile";
 import UploadRequiredFiles from "./pages/admin/UploadRequiredFiles";
 import PdfTemplate from "./pages/admin/PdfTemplate";
 import ManageAiModels from "./pages/admin/ManageAiModels";
+import Watchlist from "./pages/admin/Watchlist";
 
 export default function App() {
   const bootstrap = useAuthStore((s) => s.bootstrap);
@@ -53,6 +54,7 @@ export default function App() {
           <Route path="/admin/files" element={<RequireAdmin><UploadRequiredFiles /></RequireAdmin>} />
           <Route path="/admin/pdf-template" element={<RequireAdmin><PdfTemplate /></RequireAdmin>} />
           <Route path="/admin/analysts" element={<RequireAdmin><AnalystsProfile /></RequireAdmin>} />
+          <Route path="/admin/watchlist" element={<RequireAdmin><Watchlist /></RequireAdmin>} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

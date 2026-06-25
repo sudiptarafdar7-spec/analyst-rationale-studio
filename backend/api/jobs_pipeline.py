@@ -244,9 +244,26 @@ def reset_job(
     return {"status": "pending"}
 
 
+def _build_watchlist_bg(job_id: uuid.UUID, user_id) -> None:
+    """Background: extract standardised calls from the saved PDF into the watchlist."""
+    from services import watchlist as wl
+
+    with SessionLocal() as db:
+        job = db.get(Job, job_id)
+        if job is None:
+            return
+        try:
+            n = wl.build_from_job(db, job, created_by=user_id)
+            print(f"📊 Watchlist: built {n} call(s) from job {job_id}")
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            print(f"⚠️  Watchlist build failed for job {job_id}: {exc}")
+
+
 @router.post("/{job_id}/save")
 def save_job(
     job_id: uuid.UUID,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
@@ -255,6 +272,8 @@ def save_job(
         raise HTTPException(status_code=409, detail="Only a completed job can be saved.")
     job.status = JobStatus.saved
     db.commit()
+    # Lift the call data into the Stock Analysis watchlist (AI extraction) off-thread.
+    background.add_task(_build_watchlist_bg, job_id, user.id)
     return {"status": "saved"}
 
 

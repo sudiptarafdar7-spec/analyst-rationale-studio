@@ -14,6 +14,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Date,
+    Float,
     ForeignKey,
     Integer,
     Text,
@@ -28,6 +29,7 @@ from db.base import Base
 from db.enums import (
     AiTask,
     ApiProvider,
+    CallType,
     GateKind,
     JobStatus,
     PlatformType,
@@ -356,4 +358,69 @@ class JobAnalyst(Base):
     )
     analyst_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("analysts.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+# --- 13. watchlist_calls ----------------------------------------------------
+class WatchlistCall(Base, TimestampMixin):
+    """One stock recommendation lifted from a SAVED rationale PDF.
+
+    Snapshots everything needed to track the call independently of the source
+    job (which may be edited/deleted): identity, the CMP at call time, the
+    AI-standardised recommendation, and the live tracking fields refreshed from
+    Dhan (current CMP plus the peak high / trough low since the call date).
+    """
+
+    __tablename__ = "watchlist_calls"
+    __table_args__ = (
+        sa.Index("ix_watchlist_call_date", sa.text("call_date DESC")),
+        sa.Index("ix_watchlist_instrument", "instrument"),
+        sa.Index("ix_watchlist_call_type", "call_type"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="SET NULL")
+    )
+
+    # display snapshot (no joins needed to render the watchlist)
+    platform_name: Mapped[str | None] = mapped_column(Text)
+    platform_type: Mapped[str | None] = mapped_column(Text)
+    channel_logo_path: Mapped[str | None] = mapped_column(Text)
+    analyst_names: Mapped[str | None] = mapped_column(Text)
+    call_date: Mapped[dt.date | None] = mapped_column(Date)
+    call_time: Mapped[dt.time | None] = mapped_column(Time)
+
+    # stock identity
+    stock_symbol: Mapped[str | None] = mapped_column(Text)
+    short_name: Mapped[str | None] = mapped_column(Text)
+    listed_name: Mapped[str | None] = mapped_column(Text)
+    security_id: Mapped[str | None] = mapped_column(Text)
+    exchange: Mapped[str | None] = mapped_column(Text)
+    instrument: Mapped[str | None] = mapped_column(Text)
+    chart_path: Mapped[str | None] = mapped_column(Text)
+
+    # AI-standardised recommendation
+    call_type: Mapped[CallType] = mapped_column(
+        _enum(CallType, "call_type"), nullable=False, server_default="no_view"
+    )
+    call_cmp: Mapped[float | None] = mapped_column(Float)
+    targets: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    stoploss: Mapped[float | None] = mapped_column(Float)
+    downfall_target: Mapped[float | None] = mapped_column(Float)
+    holding_period: Mapped[str | None] = mapped_column(Text)
+    holding_period_days: Mapped[int | None] = mapped_column(Integer)
+    analysis_text: Mapped[str | None] = mapped_column(Text)
+    raw_extraction: Mapped[dict | None] = mapped_column(JSONB)
+
+    # live tracking (refreshed from Dhan)
+    current_cmp: Mapped[float | None] = mapped_column(Float)
+    peak_high: Mapped[float | None] = mapped_column(Float)
+    trough_low: Mapped[float | None] = mapped_column(Float)
+    cmp_fetched_at: Mapped[dt.datetime | None] = mapped_column(
+        sa.TIMESTAMP(timezone=True)
+    )
+
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id")
     )

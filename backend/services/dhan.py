@@ -53,6 +53,7 @@ __all__ = [
     "render_chart_png",
     "render_chart_range",
     "exchange_segment",
+    "fetch_tracking",
 ]
 
 GENERATED_CHARTS_SUBDIR = "generated-charts"
@@ -254,3 +255,46 @@ def render_chart_range(security_id: str, exchange: str, instrument: str, chart_t
             "EXCHANGE": (exchange or "NSE").upper()}
     make_premium_chart(df, meta, save_path, cmp_value, df.index[-1])
     return save_path, f"/uploads/{GENERATED_CHARTS_SUBDIR}/{fname}", cmp_value
+
+
+def fetch_tracking(security_id: str, exchange: str, instrument: str, from_date) -> dict:
+    """Daily OHLC from `from_date`..today for call tracking.
+
+    Returns {current_cmp, peak_high, trough_low, last_date} using the LAST close
+    as the current price, the max HIGH and min LOW over the window (so a target
+    counts as hit even if the price later retraced). Empty dict on no data.
+    """
+    from datetime import date, datetime, timedelta
+
+    headers = get_headers()
+    sid = str(security_id).split(".")[0].strip()
+    if not sid or sid == "nan":
+        return {}
+    instrument = (instrument or "EQUITY").upper().strip()
+    seg = exchange_segment(exchange, instrument)
+
+    if isinstance(from_date, str):
+        f_obj = parse_date(normalize_date_format(from_date) or from_date)
+    elif isinstance(from_date, datetime):
+        f_obj = from_date.date()
+    else:
+        f_obj = from_date  # date
+    today = date.today()
+    if f_obj > today:
+        f_obj = today
+
+    payload = {
+        "securityId": sid, "exchangeSegment": seg, "instrument": instrument,
+        "expiryCode": 0, "oi": False,
+        "fromDate": f_obj.strftime("%Y-%m-%d"),
+        "toDate": (today + timedelta(days=1)).strftime("%Y-%m-%d"),  # non-inclusive
+    }
+    df = zip_candles(_post("/charts/historical", payload, headers))
+    if df is None or df.empty:
+        return {}
+    return {
+        "current_cmp": round(float(df["close"].iloc[-1]), 2),
+        "peak_high": round(float(df["high"].max()), 2),
+        "trough_low": round(float(df["low"].min()), 2),
+        "last_date": df.index[-1].date().isoformat() if hasattr(df.index[-1], "date") else None,
+    }
