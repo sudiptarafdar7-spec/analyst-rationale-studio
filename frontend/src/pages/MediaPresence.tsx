@@ -219,10 +219,14 @@ interface FormState {
   video_time: string;
   extract_all_stocks: boolean;
   audioFile: File | null;
+  trim: boolean;
+  audioStart: string;
+  audioEnd: string;
 }
 const EMPTY: FormState = {
   platform_type: "youtube", platform_id: "", analyst_ids: [], title: "",
   youtube_url: "", video_date: "", video_time: "", extract_all_stocks: false, audioFile: null,
+  trim: false, audioStart: "", audioEnd: "",
 };
 
 export default function MediaPresence() {
@@ -289,6 +293,7 @@ export default function MediaPresence() {
       video_time: j.video_time ?? "",
       extract_all_stocks: j.extract_all_stocks,
       audioFile: null,
+      trim: false, audioStart: "", audioEnd: "",
     });
     setProgress(null);
     setOpen(true);
@@ -334,6 +339,10 @@ export default function MediaPresence() {
       if (form.video_date) fd.append("video_date", form.video_date);
       if (form.video_time) fd.append("video_time", form.video_time);
       if (form.audioFile) fd.append("audio", form.audioFile);
+      if (form.audioFile && form.trim && form.audioStart.trim() && form.audioEnd.trim()) {
+        fd.append("audio_start", form.audioStart.trim());
+        fd.append("audio_end", form.audioEnd.trim());
+      }
       setProgress(0);
       return uploadWithProgress("/jobs", fd, setProgress);
     },
@@ -716,6 +725,33 @@ export default function MediaPresence() {
                 </div>
               )}
               <input ref={audioRef} type="file" accept={AUDIO_ACCEPT} className="hidden" onChange={(e) => pickAudio(e.target.files?.[0] ?? undefined)} />
+              {form.audioFile && (
+                <div className="mt-3 rounded-xl border border-slate-200 p-3">
+                  <button type="button" onClick={() => setForm((s) => ({ ...s, trim: !s.trim }))}
+                    className="flex w-full items-center justify-between gap-2 text-sm">
+                    <span className="text-left">
+                      <span className="font-medium text-slate-700">Use the entire audio</span>
+                      <span className="block text-xs text-slate-400">Turn off to transcribe only a portion</span>
+                    </span>
+                    <span className={`relative h-5 w-9 shrink-0 rounded-full transition ${!form.trim ? "bg-brand" : "bg-slate-300"}`}>
+                      <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${!form.trim ? "left-[18px]" : "left-0.5"}`} />
+                    </span>
+                  </button>
+                  {form.trim && (
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="label">Start time</label>
+                        <input className="input" placeholder="HH:MM:SS" value={form.audioStart} onChange={(e) => setForm((s) => ({ ...s, audioStart: e.target.value }))} />
+                      </div>
+                      <div>
+                        <label className="label">End time</label>
+                        <input className="input" placeholder="HH:MM:SS" value={form.audioEnd} onChange={(e) => setForm((s) => ({ ...s, audioEnd: e.target.value }))} />
+                      </div>
+                      <p className="col-span-2 text-xs text-slate-400">The clip between these times is trimmed, saved, and used for transcription. Accepts HH:MM:SS, MM:SS or seconds.</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

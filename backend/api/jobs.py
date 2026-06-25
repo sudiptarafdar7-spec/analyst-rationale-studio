@@ -23,6 +23,7 @@ from db.enums import JobStatus, UploadedFileType, UserRole
 from db.models import Analyst, Channel, Job, JobAnalyst, JobStep, Platform, UploadedFile, User
 from db.session import get_db
 from schemas.job import AnalystRef, JobDetailOut, JobListItem, JobStepOut, JobUpdateIn
+from utils.audio import parse_timecode, trim_audio
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -146,6 +147,8 @@ async def create_job(
     video_date: str | None = Form(None),
     video_time: str | None = Form(None),
     audio: UploadFile | None = File(None),
+    audio_start: str | None = Form(None),
+    audio_end: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> JobDetailOut:
@@ -190,9 +193,31 @@ async def create_job(
         abs_path = os.path.abspath(os.path.join(audio_dir, safe))
         with open(abs_path, "wb") as fh:
             fh.write(contents)
+
+        # Optional trim: when the user disabled "use entire audio" and gave a
+        # start/end, cut the clip and make the TRIMMED file the job's audio.
+        final_path, final_name, final_size = abs_path, audio.filename, len(contents)
+        start_sec = parse_timecode(audio_start)
+        end_sec = parse_timecode(audio_end)
+        if start_sec is not None and end_sec is not None:
+            if start_sec < 0 or end_sec <= start_sec:
+                raise HTTPException(status_code=422, detail="End time must be after start time.")
+            trimmed_path = os.path.abspath(os.path.join(audio_dir, f"trimmed_{safe}"))
+            try:
+                trim_audio(abs_path, trimmed_path, start_sec, end_sec)
+            except RuntimeError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+            try:
+                os.remove(abs_path)  # keep only the trimmed clip
+            except OSError:
+                pass
+            final_path = trimmed_path
+            final_name = f"trimmed_{audio.filename}"
+            final_size = os.path.getsize(trimmed_path)
+
         uf = UploadedFile(
-            file_type=UploadedFileType.audio, file_path=abs_path, file_name=audio.filename,
-            mime_type=audio.content_type or AUDIO_MEDIA.get(ext), size_bytes=len(contents),
+            file_type=UploadedFileType.audio, file_path=final_path, file_name=final_name,
+            mime_type=audio.content_type or AUDIO_MEDIA.get(ext), size_bytes=final_size,
             uploaded_by=user.id,
         )
         db.add(uf)
