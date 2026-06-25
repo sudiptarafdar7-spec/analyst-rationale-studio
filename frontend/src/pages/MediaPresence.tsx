@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   CloudUpload,
+  Eye,
   Facebook,
   FileDown,
   FileMusic,
@@ -535,6 +536,12 @@ export default function MediaPresence() {
                   <div className="flex w-8 justify-center">
                     {(j.status === "completed" || j.status === "saved") && j.pdf_url && (
                       <button onClick={() => downloadJobPdf(j)} title="Download PDF" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><FileDown size={16} /></button>
+                    )}
+                  </div>
+                  {/* watchlist — reserved slot */}
+                  <div className="flex w-8 justify-center">
+                    {j.status === "saved" && (
+                      <button onClick={() => navigate(`/admin/watchlist?job=${j.id}`)} title="View this job's calls in the watchlist" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Eye size={16} /></button>
                     )}
                   </div>
                   <button onClick={() => openEdit(j)} title="Edit" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Pencil size={15} /></button>

@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, ArrowLeft, CalendarClock, Check, CheckCircle2, ChevronRight, CloudUpload,
   Download, Eye, EyeOff, Facebook, Globe, Instagram, Loader2, MessageCircle, Play,
-  RotateCcw, Save, Send, Trash2, Users, X, Youtube,
+  RotateCcw, Save, Send, Trash2, TrendingUp, Users, X, Youtube,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { api, ApiError } from "../lib/api";
@@ -182,6 +182,11 @@ export default function WorkPage() {
             <button className="btn-primary" disabled={busy} onClick={() => act(`/jobs/${jobId}/start`, undefined, "Pipeline started")}>
               <Play size={16} /> Start
             </button>
+          )}
+          {(data.status === "saved" || data.status === "completed") && (
+            <Link to={`/admin/watchlist?job=${jobId}`} className="btn-ghost" title="View this job's calls in the watchlist">
+              <TrendingUp size={16} /> Watchlist
+            </Link>
           )}
           <button className="btn-ghost" disabled={busy} onClick={() => act(`/jobs/${jobId}/restart`, undefined, "Restarting from step 1")}>
             <RotateCcw size={16} /> Restart

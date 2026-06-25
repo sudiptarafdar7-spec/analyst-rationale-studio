@@ -75,6 +75,7 @@ def list_watchlist(
     instrument: str | None = Query(None),
     call_type: str | None = Query(None),
     status: str | None = Query(None, description="achieved | awaited"),
+    job_id: uuid.UUID | None = Query(None, description="only calls from this rationale job"),
     q: str | None = Query(None),
 ) -> WatchlistOut:
     stmt = select(WatchlistCall).order_by(WatchlistCall.call_date.desc().nullslast(), WatchlistCall.created_at.desc())
@@ -86,6 +87,8 @@ def list_watchlist(
         stmt = stmt.where(WatchlistCall.instrument == instrument)
     if call_type:
         stmt = stmt.where(WatchlistCall.call_type == call_type)
+    if job_id:
+        stmt = stmt.where(WatchlistCall.job_id == job_id)
 
     calls = db.scalars(stmt).all()
 
