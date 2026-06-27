@@ -3,13 +3,14 @@ import {
   BarChart3,
   FileBox,
   FileText,
+  ClipboardCheck,
   History,
   KeyRound,
   LayoutDashboard,
   LineChart,
   Radio,
-  Save,
   Settings2,
+  ShieldCheck,
   Sparkles,
   TrendingUp,
   UserCircle,
@@ -43,6 +44,13 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [{ label: "AI Rationale", to: "/ai-rationale", icon: Sparkles }],
   },
   {
+    heading: "Review",
+    items: [
+      { label: "Pending Review", to: "/review", icon: ClipboardCheck },
+      { label: "Signed Rationale", to: "/signed", icon: ShieldCheck },
+    ],
+  },
+  {
     heading: "Other Tools",
     items: [{ label: "Generate Chart", to: "/generate-chart", icon: LineChart, perm: "chart:generate" }],
   },
@@ -53,7 +61,6 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     heading: "Management",
     items: [
-      { label: "Saved Rationale", to: "/saved", icon: Save },
       { label: "My Activity", to: "/activity", icon: History },
       { label: "Manage Profile", to: "/profile", icon: UserCircle },
     ],

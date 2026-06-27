@@ -27,6 +27,7 @@ PERMISSIONS: list[dict] = [
     {"key": "watchlist:refresh", "label": "Fetch CMP for watchlist", "group": "employee"},
     {"key": "watchlist:delete", "label": "Remove from watchlist", "group": "employee"},
     {"key": "jobs:view_all", "label": "See other users' jobs & entries", "group": "employee"},
+    {"key": "review:sign", "label": "Sign rationales (upload signed PDF)", "group": "review"},
     # admin areas
     {"key": "admin:users", "label": "User management", "group": "admin"},
     {"key": "admin:platforms", "label": "Manage Platform", "group": "admin"},
@@ -42,6 +43,8 @@ ADMIN_KEYS: list[str] = [p["key"] for p in PERMISSIONS if p["group"] == "admin"]
 EMPLOYEE_KEYS: list[str] = [p["key"] for p in PERMISSIONS if p["group"] == "employee"]
 
 # Sensible default grant for a brand-new employee.
+REVIEWER_DEFAULT: list[str] = ["jobs:view_all", "watchlist:view", "review:sign"]
+
 EMPLOYEE_DEFAULT: list[str] = [
     "media:add", "media:edit", "media:delete",
     "rationale:run", "rationale:review",

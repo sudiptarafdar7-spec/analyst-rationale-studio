@@ -11,7 +11,7 @@ import { toast } from "../store/toast";
 import Modal from "../components/Modal";
 
 type PlatformType = "youtube" | "facebook" | "instagram" | "telegram" | "whatsapp" | "other";
-type JobStatus = "pending" | "running" | "paused_review" | "completed" | "failed" | "saved";
+type JobStatus = "pending" | "running" | "paused_review" | "completed" | "failed" | "saved" | "signed";
 interface Platform { id: string; platform_type: PlatformType; channel_name: string }
 interface Job {
   id: string; platform_id: string | null; platform_name: string | null; platform_type: PlatformType | null;
@@ -32,11 +32,12 @@ const STATUS: Record<JobStatus, { label: string; cls: string; pulse?: boolean }>
   paused_review: { label: "Needs review", cls: "bg-amber-100 text-amber-700" },
   completed: { label: "Completed", cls: "bg-emerald-100 text-emerald-700" },
   failed: { label: "Failed", cls: "bg-red-100 text-red-700" },
-  saved: { label: "Saved", cls: "bg-violet-100 text-violet-700" },
+  saved: { label: "Pending review", cls: "bg-violet-100 text-violet-700" },
+  signed: { label: "Signed", cls: "bg-emerald-100 text-emerald-700" },
 };
 const ROW_BG: Record<JobStatus, string> = {
   pending: "bg-white", running: "bg-slate-50", paused_review: "bg-amber-50/50",
-  completed: "bg-emerald-50/50", failed: "bg-red-50/40", saved: "bg-violet-50/40",
+  completed: "bg-emerald-50/50", failed: "bg-red-50/40", saved: "bg-violet-50/40", signed: "bg-emerald-50/60",
 };
 const TYPES: PlatformType[] = ["youtube", "facebook", "instagram", "telegram", "whatsapp", "other"];
 
@@ -168,7 +169,7 @@ export default function AiRationale() {
                 <div className="flex shrink-0 items-center gap-1">
                   <button onClick={() => navigate(`/media-presence?edit=${j.id}`)} title="Edit entry" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Pencil size={15} /></button>
                   <div className="flex w-8 justify-center">
-                    {(j.status === "completed" || j.status === "saved") && j.pdf_url && (
+                    {(j.status === "completed" || j.status === "saved" || j.status === "signed") && j.pdf_url && (
                       <button onClick={() => downloadJobPdf(j)} title="Download PDF" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><FileDown size={16} /></button>
                     )}
                   </div>

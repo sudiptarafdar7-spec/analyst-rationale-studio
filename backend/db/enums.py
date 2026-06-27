@@ -12,6 +12,7 @@ import enum
 class UserRole(str, enum.Enum):
     admin = "admin"
     employee = "employee"
+    reviewer = "reviewer"
 
 
 class PlatformType(str, enum.Enum):
@@ -66,6 +67,7 @@ class JobStatus(str, enum.Enum):
     completed = "completed"
     failed = "failed"
     saved = "saved"
+    signed = "signed"
 
 
 class GateKind(str, enum.Enum):

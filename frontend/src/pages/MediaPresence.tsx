@@ -35,7 +35,7 @@ import { toast } from "../store/toast";
 import Modal from "../components/Modal";
 
 type PlatformType = "youtube" | "facebook" | "instagram" | "telegram" | "whatsapp" | "other";
-type JobStatus = "pending" | "running" | "paused_review" | "completed" | "failed" | "saved";
+type JobStatus = "pending" | "running" | "paused_review" | "completed" | "failed" | "saved" | "signed";
 
 interface Platform {
   id: string;
@@ -87,7 +87,8 @@ const STATUS_META: Record<JobStatus, { label: string; cls: string; pulse?: boole
   paused_review: { label: "Needs review", cls: "bg-amber-100 text-amber-700" },
   completed: { label: "Completed", cls: "bg-emerald-100 text-emerald-700" },
   failed: { label: "Failed", cls: "bg-red-100 text-red-700" },
-  saved: { label: "Saved", cls: "bg-violet-100 text-violet-700" },
+  saved: { label: "Pending review", cls: "bg-violet-100 text-violet-700" },
+  signed: { label: "Signed", cls: "bg-emerald-100 text-emerald-700" },
 };
 
 const ROW_BG: Record<JobStatus, string> = {
@@ -97,6 +98,7 @@ const ROW_BG: Record<JobStatus, string> = {
   completed: "bg-emerald-50/50",
   failed: "bg-red-50/40",
   saved: "bg-violet-50/40",
+  signed: "bg-emerald-50/60",
 };
 
 interface Filters {
@@ -543,13 +545,13 @@ export default function MediaPresence() {
                   </div>
                   {/* pdf — reserved slot */}
                   <div className="flex w-8 justify-center">
-                    {(j.status === "completed" || j.status === "saved") && j.pdf_url && (
+                    {(j.status === "completed" || j.status === "saved" || j.status === "signed") && j.pdf_url && (
                       <button onClick={() => downloadJobPdf(j)} title="Download PDF" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><FileDown size={16} /></button>
                     )}
                   </div>
                   {/* watchlist — reserved slot */}
                   <div className="flex w-8 justify-center">
-                    {j.status === "saved" && (
+                    {(j.status === "saved" || j.status === "signed") && (
                       <button onClick={() => navigate(`/admin/watchlist?job=${j.id}`)} title="View this job's calls in the watchlist" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Eye size={16} /></button>
                     )}
                   </div>

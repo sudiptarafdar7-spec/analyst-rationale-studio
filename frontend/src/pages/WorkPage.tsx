@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, ArrowLeft, CalendarClock, Check, CheckCircle2, ChevronRight, CloudUpload,
   Download, Eye, EyeOff, Facebook, Globe, Instagram, Loader2, MessageCircle, Play,
-  RotateCcw, Save, Send, Trash2, TrendingUp, Users, X, Youtube,
+  RotateCcw, Send, Trash2, TrendingUp, Users, X, Youtube,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { api, ApiError } from "../lib/api";
@@ -13,7 +13,7 @@ import StepStage from "../components/StepStage";
 import { useAuthStore } from "../store/auth";
 import { toast } from "../store/toast";
 
-type JobStatus = "pending" | "running" | "paused_review" | "completed" | "failed" | "saved";
+type JobStatus = "pending" | "running" | "paused_review" | "completed" | "failed" | "saved" | "signed";
 type GateKind = "none" | "extract_review" | "mapping_review" | "chart_upload";
 type StepStatus = "pending" | "running" | "done" | "failed" | "skipped";
 
@@ -230,6 +230,7 @@ export default function WorkPage() {
           {data.status === "paused_review" && data.gate === "chart_upload" && <ChartsGate jobId={jobId} onDone={refetch} />}
           {data.status === "completed" && <CompletionPanel job={data} onSaved={refetch} onDeleted={() => navigate("/ai-rationale")} />}
           {data.status === "saved" && <CompletionPanel job={data} saved onSaved={refetch} onDeleted={() => navigate("/ai-rationale")} />}
+          {data.status === "signed" && <CompletionPanel job={data} signed onSaved={refetch} onDeleted={() => navigate("/ai-rationale")} />}
           {data.status === "failed" && (
             <FailurePanel job={data} busy={busy}
               onRetry={() => act(`/jobs/${jobId}/retry-step`, { step_no: data.current_step }, `Retrying step ${data.current_step}`)}
@@ -267,7 +268,7 @@ function StatusBadge({ status }: { status: JobStatus }) {
   const map: Record<JobStatus, [string, string]> = {
     pending: ["Pending", "text-slate-500"], running: ["Running", "text-blue-600"],
     paused_review: ["Needs review", "text-amber-600"], completed: ["Completed", "text-emerald-600"],
-    failed: ["Failed", "text-red-600"], saved: ["Saved", "text-violet-600"],
+    failed: ["Failed", "text-red-600"], saved: ["Pending review", "text-violet-600"], signed: ["Signed", "text-emerald-600"],
   };
   const [label, cls] = map[status];
   return <span className={`font-medium ${cls}`}>{label}</span>;
@@ -563,27 +564,31 @@ function GateHeader({ title, hint }: { title: string; hint: string }) {
 }
 
 /* --------------------------- completion / failure --------------------------- */
-function CompletionPanel({ job, saved, onSaved, onDeleted }: { job: JobDetail; saved?: boolean; onSaved: () => void; onDeleted: () => void }) {
+function CompletionPanel({ job, saved, signed, onSaved, onDeleted }: { job: JobDetail; saved?: boolean; signed?: boolean; onSaved: () => void; onDeleted: () => void }) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const pdfPath = signed ? `/review/${job.id}/signed-pdf` : `/jobs/${job.id}/pdf`;
   useEffect(() => {
     let u: string | null = null;
-    api.getBlob(`/jobs/${job.id}/pdf`).then((b) => { u = URL.createObjectURL(b); setPdfUrl(u); }).catch(() => setPdfUrl(null));
+    api.getBlob(pdfPath).then((b) => { u = URL.createObjectURL(b); setPdfUrl(u); }).catch(() => setPdfUrl(null));
     return () => { if (u) URL.revokeObjectURL(u); };
-  }, [job.id]);
-  const save = async () => { setBusy(true); try { await api.post(`/jobs/${job.id}/save`); toast.success("Saved to archive"); onSaved(); } catch (e) { toast.error(e instanceof ApiError ? e.message : "Save failed"); } finally { setBusy(false); } };
+  }, [pdfPath]);
+  const send = async () => { setBusy(true); try { await api.post(`/jobs/${job.id}/save`); toast.success("Sent to reviewer"); onSaved(); } catch (e) { toast.error(e instanceof ApiError ? e.message : "Could not send"); } finally { setBusy(false); } };
   const del = async () => { if (!confirm("Delete this job and its files?")) return; setBusy(true); try { await api.del(`/jobs/${job.id}`); toast.success("Deleted"); onDeleted(); } catch (e) { toast.error(e instanceof ApiError ? e.message : "Delete failed"); } finally { setBusy(false); } };
+  const title = signed ? "Signed rationale" : saved ? "Sent for review" : "Rationale complete";
+  const subtitle = signed ? "The signed PDF is archived under Signed Rationale." : saved ? "Waiting for a reviewer to sign the PDF." : "The compliance PDF is ready — send it to the reviewer.";
   return (
     <div className="card p-5">
       <div className="flex items-start gap-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-100 text-emerald-700"><CheckCircle2 size={18} /></span>
+        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${signed ? "bg-emerald-100 text-emerald-700" : saved ? "bg-violet-100 text-violet-700" : "bg-emerald-100 text-emerald-700"}`}><CheckCircle2 size={18} /></span>
         <div className="flex-1">
-          <h2 className="text-lg font-semibold">{saved ? "Saved rationale" : "Rationale complete"}</h2>
-          <p className="mt-0.5 text-sm text-slate-500">The compliance PDF is ready.</p>
+          <h2 className="text-lg font-semibold">{title}</h2>
+          <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>
         </div>
-        <div className="flex gap-2">
-          <a className="btn-ghost" href={pdfUrl ?? undefined} download={pdfUrl ? `${job.title || "rationale"}.pdf` : undefined}><Download size={16} /> Download</a>
-          {!saved && <button className="btn-primary" disabled={busy} onClick={save}><Save size={16} /> Save</button>}
+        <div className="flex flex-wrap gap-2">
+          <a className="btn-ghost" href={pdfUrl ?? undefined} download={pdfUrl ? `${job.title || "rationale"}${signed ? "-signed" : ""}.pdf` : undefined}><Download size={16} /> Download</a>
+          {!saved && !signed && <button className="btn-primary" disabled={busy} onClick={send}><Send size={16} /> Send to reviewer</button>}
+          {(saved || signed) && <Link className="btn-ghost" to={`/review/${job.id}`}><TrendingUp size={16} /> Open review</Link>}
           <button className="btn bg-danger text-white hover:bg-danger/90" disabled={busy} onClick={del}><Trash2 size={16} /> Delete</button>
         </div>
       </div>

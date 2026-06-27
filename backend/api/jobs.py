@@ -55,8 +55,11 @@ def _snapshot_channel(db: Session, platform: Platform) -> Channel:
 
 
 def _ensure_access(job: Job, user: User) -> None:
-    if user.role != UserRole.admin and job.created_by != user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your job")
+    # Viewing is allowed for anyone who can see all jobs (admins/reviewers/most
+    # employees) or the job's own creator. Mutations are gated separately.
+    if has_perm(user, "jobs:view_all") or job.created_by == user.id:
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your job")
 
 
 def _audio_url(job: Job) -> str | None:
@@ -110,7 +113,12 @@ def _to_list_item(db: Session, job: Job) -> JobListItem:
         current_step=job.current_step,
         started_at=started_at,
         audio_url=_audio_url(job),
-        pdf_url=(f"/api/jobs/{job.id}/pdf" if job.output_pdf_path else None),
+        pdf_url=(
+            f"/api/review/{job.id}/signed-pdf"
+            if (job.status == JobStatus.signed and job.signed_pdf_path)
+            else (f"/api/jobs/{job.id}/pdf" if job.output_pdf_path else None)
+        ),
+        signed_at=job.signed_at,
         created_at=job.created_at,
     )
 

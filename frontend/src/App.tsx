@@ -10,7 +10,9 @@ import Profile from "./pages/Profile";
 import MediaPresence from "./pages/MediaPresence";
 import AiRationale from "./pages/AiRationale";
 import WorkPage from "./pages/WorkPage";
-import SavedRationale from "./pages/SavedRationale";
+import PendingReview from "./pages/PendingReview";
+import ReviewDetail from "./pages/ReviewDetail";
+import SignedRationale from "./pages/SignedRationale";
 import GenerateChart from "./pages/GenerateChart";
 import ManageApiKeys from "./pages/admin/ManageApiKeys";
 import ManagePlatform from "./pages/admin/ManagePlatform";
@@ -47,7 +49,9 @@ export default function App() {
           <Route path="/ai-rationale" element={<AiRationale />} />
           <Route path="/ai-rationale/:jobId" element={<WorkPage />} />
           <Route path="/generate-chart" element={<GenerateChart />} />
-          <Route path="/saved" element={<SavedRationale />} />
+          <Route path="/review" element={<PendingReview />} />
+          <Route path="/review/:jobId" element={<ReviewDetail />} />
+          <Route path="/signed" element={<SignedRationale />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/activity" element={<MyActivity />} />
 

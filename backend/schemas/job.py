@@ -47,6 +47,7 @@ class JobListItem(BaseModel):
     started_at: dt.datetime | None = None
     audio_url: str | None = None
     pdf_url: str | None = None
+    signed_at: dt.datetime | None = None
     created_at: dt.datetime
 
 

@@ -283,6 +283,10 @@ class Job(Base, TimestampMixin):
     status: Mapped[JobStatus] = mapped_column(
         _enum(JobStatus, "job_status"), nullable=False, server_default="pending"
     )
+    signed_pdf_path: Mapped[str | None] = mapped_column(Text)
+    signed_at: Mapped[dt.datetime | None] = mapped_column(sa.TIMESTAMP(timezone=True))
+    signed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    raw_cleaned: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.false())
     gate: Mapped[GateKind] = mapped_column(
         _enum(GateKind, "gate_kind"), nullable=False, server_default="none"
     )

@@ -20,6 +20,7 @@ from api.jobs_pipeline import ws_router
 from api.jobs_review import router as jobs_review_router
 from api.pdf_template import router as pdf_template_router
 from api.platforms import router as platforms_router
+from api.review import router as review_router
 from api.saved import router as saved_router
 from api.tools import router as tools_router
 from api.watchlist import router as watchlist_router
@@ -83,6 +84,15 @@ def _ensure_db_schema() -> None:
             conn.execute(text(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions jsonb NOT NULL DEFAULT '[]'::jsonb"
             ))
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'reviewer'"))
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TYPE job_status ADD VALUE IF NOT EXISTS 'signed'"))
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS signed_pdf_path text"))
+            conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS signed_at timestamptz"))
+            conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS signed_by uuid"))
+            conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS raw_cleaned boolean NOT NULL DEFAULT false"))
 
         Base.metadata.create_all(bind=engine)  # creates only missing tables
 
@@ -109,6 +119,15 @@ async def _on_startup() -> None:
     hub.bind_loop(asyncio.get_running_loop())
     # Apply pending migrations so the app self-heals after schema-changing updates.
     await asyncio.to_thread(_ensure_db_schema)
+    # Retention sweep: prune raw artifacts of rationales signed > 7 days ago.
+    try:
+        from services.cleanup import run_retention
+
+        n = await asyncio.to_thread(run_retention)
+        if n:
+            print(f"🧹 Retention: pruned raw files for {n} signed job(s)")
+    except Exception as exc:  # noqa: BLE001
+        print(f"⚠️  Retention sweep skipped: {exc}")
 
 
 # Routes under /api
@@ -128,6 +147,7 @@ app.include_router(jobs_pipeline_router, prefix="/api")
 app.include_router(jobs_review_router, prefix="/api")
 app.include_router(saved_router, prefix="/api")
 app.include_router(watchlist_router, prefix="/api")
+app.include_router(review_router, prefix="/api")
 app.include_router(ws_router)  # WS /ws/jobs/{id} (no /api prefix)
 
 # Serve uploaded files (avatars, logos, ...) from the upload dir.
