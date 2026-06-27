@@ -7,9 +7,13 @@ import { useAuthStore } from "../store/auth";
 import { toast } from "../store/toast";
 import Avatar from "../components/Avatar";
 import { BRAND_ICON, NAV_GROUPS } from "./nav";
+import { hasPerm } from "../lib/perms";
 
-function Sidebar({ isAdmin }: { isAdmin: boolean }) {
-  const groups = NAV_GROUPS.filter((g) => !g.adminOnly || isAdmin);
+function Sidebar() {
+  const user = useAuthStore((s) => s.user);
+  const groups = NAV_GROUPS
+    .map((g) => ({ ...g, items: g.items.filter((it) => hasPerm(user, it.perm)) }))
+    .filter((g) => g.items.length > 0);
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
       <div className="flex h-16 items-center gap-2.5 border-b border-slate-200 px-5">
@@ -116,10 +120,9 @@ function UserMenu() {
 }
 
 export default function AppShell() {
-  const isAdmin = useAuthStore((s) => s.user?.role === "admin");
   return (
     <div className="flex h-full">
-      <Sidebar isAdmin={isAdmin} />
+      <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white/80 px-5 backdrop-blur">
           <div className="text-sm font-medium text-slate-400">Analyst Rationale Studio</div>

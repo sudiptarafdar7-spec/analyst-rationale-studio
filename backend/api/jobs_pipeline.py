@@ -27,6 +27,8 @@ from db.enums import GateKind, JobStatus
 from db.models import Job, JobStep, User
 from db.session import SessionLocal, get_db
 from core.deps import get_current_user, get_optional_user
+from core.permissions import require_perm
+from services import activity
 from core.signing import DEFAULT_TTL_SECONDS, sign_path, verify_path
 from schemas.job import JobStepOut
 from services import pipeline
@@ -77,7 +79,7 @@ def start_job(
     job_id: uuid.UUID,
     bg: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_perm("rationale:run")),
 ) -> dict:
     job = _load_owned(job_id, db, user)
     if job.status in (JobStatus.running, JobStatus.paused_review):
@@ -86,6 +88,7 @@ def start_job(
     job.current_step = 1
     db.commit()
     bg.add_task(pipeline.run_pipeline, job_id, 1)
+    activity.log(db, user, "rationale:run", f"Started the rationale pipeline for {job.title or 'a job'}", entity_type="job", entity_id=job_id)
     return {"status": "running", "message": "Pipeline started."}
 
 
@@ -94,7 +97,7 @@ def restart_job(
     job_id: uuid.UUID,
     bg: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_perm("rationale:run")),
 ) -> dict:
     _load_owned(job_id, db, user)
     bg.add_task(pipeline.restart, job_id)
@@ -106,7 +109,7 @@ def resume_job(
     job_id: uuid.UUID,
     bg: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_perm("rationale:run")),
 ) -> dict:
     job = _load_owned(job_id, db, user)
     if job.status != JobStatus.paused_review:
@@ -121,7 +124,7 @@ def retry_step(
     body: RetryStepIn,
     bg: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_perm("rationale:run")),
 ) -> dict:
     _load_owned(job_id, db, user)
     if not (1 <= body.step_no <= 10):

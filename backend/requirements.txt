@@ -28,4 +28,5 @@ deepgram-sdk>=7
 google-api-python-client
 celery[redis]
 redis
-web
+websockets
+pytest

@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from core.deps import require_admin
+from core.permissions import require_perm
 from db.enums import UploadedFileType
 from db.models import UploadedFile, User
 from db.session import get_db
@@ -69,7 +70,7 @@ def _store(db: Session, file_type: UploadedFileType, meta: dict, uploader: uuid.
 def list_files(
     include_inactive: bool = False,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("admin:files")),
 ) -> list[UploadedFileOut]:
     stmt = select(UploadedFile).order_by(UploadedFile.uploaded_at.desc())
     if not include_inactive:
@@ -81,7 +82,7 @@ def list_files(
 async def upload_master(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_perm("admin:files")),
 ) -> MasterUploadOut:
     name = (file.filename or "").lower()
     if not name.endswith(".csv"):
@@ -112,7 +113,7 @@ async def upload_master(
 async def upload_company_logo(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_perm("admin:files")),
 ) -> UploadedFileOut:
     if file.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=415, detail="Logo must be a PNG, JPEG, WEBP, GIF or SVG image")
@@ -129,7 +130,7 @@ async def upload_font(
     variant: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_perm("admin:files")),
 ) -> UploadedFileOut:
     variant = variant.strip().lower()
     if variant not in FONT_VARIANTS:
@@ -149,7 +150,7 @@ async def upload_font(
 def deactivate_file(
     file_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("admin:files")),
 ) -> None:
     row = db.get(UploadedFile, file_id)
     if row is None:

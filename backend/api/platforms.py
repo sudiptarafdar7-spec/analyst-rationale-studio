@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from core.deps import get_current_user, require_admin
+from core.permissions import require_perm
 from db.enums import PlatformType
 from db.models import Job, Platform, User
 from db.session import get_db
@@ -42,7 +43,7 @@ def list_platforms(
 @router.get("/youtube/resolve", response_model=YoutubeResolveOut)
 def youtube_resolve(
     url: str = Query(..., min_length=3),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("admin:platforms")),
 ) -> YoutubeResolveOut:
     """Resolve a YouTube URL to channel name + avatar (saved locally)."""
     info = resolve_channel(url)
@@ -64,7 +65,7 @@ async def create_platform(
     channel_logo_path: str | None = Form(None),
     logo: UploadFile | None = File(None),
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_perm("admin:platforms")),
 ) -> PlatformOut:
     # An uploaded file wins; otherwise accept a previously-fetched logo path.
     logo_path = await save_image_upload(logo, LOGO_SUBDIR) if logo else _safe_logo_path(channel_logo_path)
@@ -90,7 +91,7 @@ async def update_platform(
     channel_logo_path: str | None = Form(None),
     logo: UploadFile | None = File(None),
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("admin:platforms")),
 ) -> PlatformOut:
     platform = db.get(Platform, platform_id)
     if platform is None:
@@ -118,7 +119,7 @@ async def update_platform(
 def delete_platform(
     platform_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("admin:platforms")),
 ) -> None:
     platform = db.get(Platform, platform_id)
     if platform is None:

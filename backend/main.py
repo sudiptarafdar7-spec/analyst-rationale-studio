@@ -79,8 +79,25 @@ def _ensure_db_schema() -> None:
             ))
         with engine.begin() as conn:
             conn.execute(text("ALTER TYPE ai_task ADD VALUE IF NOT EXISTS 'watchlist'"))
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions jsonb NOT NULL DEFAULT '[]'::jsonb"
+            ))
 
         Base.metadata.create_all(bind=engine)  # creates only missing tables
+
+        # One-time permission backfill: only if nobody has permissions yet, so
+        # admin's later edits are never overwritten on subsequent boots.
+        with engine.begin() as conn:
+            granted = conn.execute(text(
+                "SELECT count(*) FROM users WHERE permissions <> '[]'::jsonb"
+            )).scalar() or 0
+            if granted == 0:
+                emp = ('["media:add","media:edit","media:delete","rationale:run",'
+                       '"rationale:review","chart:generate","watchlist:view",'
+                       '"watchlist:refresh","watchlist:delete","jobs:view_all"]')
+                conn.execute(text("UPDATE users SET permissions = '[\"*\"]'::jsonb WHERE role = 'admin'"))
+                conn.execute(text(f"UPDATE users SET permissions = '{emp}'::jsonb WHERE role = 'employee'"))
         print("✅ Ensured database tables via metadata")
     except Exception as exc:  # noqa: BLE001
         print(f"⚠️  Could not ensure DB schema automatically: {exc}")

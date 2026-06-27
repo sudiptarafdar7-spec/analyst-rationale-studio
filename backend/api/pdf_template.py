@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from core.deps import require_admin
+from core.permissions import require_perm
 from db.models import PdfTemplate, User
 from db.session import get_db
 from schemas.pdf_template import PdfTemplateOut, PdfTemplateUpsert
@@ -20,7 +21,7 @@ def _latest(db: Session) -> PdfTemplate | None:
 @router.get("", response_model=PdfTemplateOut | None)
 def get_template(
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("admin:pdf_template")),
 ) -> PdfTemplateOut | None:
     row = _latest(db)
     return PdfTemplateOut.model_validate(row) if row else None
@@ -30,7 +31,7 @@ def get_template(
 def upsert_template(
     body: PdfTemplateUpsert,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("admin:pdf_template")),
 ) -> PdfTemplateOut:
     row = _latest(db)
     if row is None:

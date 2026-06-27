@@ -19,6 +19,8 @@ from sqlalchemy.orm import Session
 
 from core.config import settings
 from core.deps import get_current_user
+from core.permissions import has_perm, require_perm
+from services import activity
 from db.enums import JobStatus, UploadedFileType, UserRole
 from db.models import Analyst, Channel, Job, JobAnalyst, JobStep, Platform, UploadedFile, User
 from db.session import get_db
@@ -131,7 +133,7 @@ def _to_detail(db: Session, job: Job) -> JobDetailOut:
 @router.get("", response_model=list[JobListItem])
 def list_jobs(db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> list[JobListItem]:
     stmt = select(Job).order_by(Job.created_at.desc())
-    if user.role != UserRole.admin:
+    if not has_perm(user, "jobs:view_all"):
         stmt = stmt.where(Job.created_by == user.id)
     return [_to_list_item(db, j) for j in db.scalars(stmt).all()]
 
@@ -150,7 +152,7 @@ async def create_job(
     audio_start: str | None = Form(None),
     audio_end: str | None = Form(None),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_perm("media:add")),
 ) -> JobDetailOut:
     platform = db.get(Platform, platform_id)
     if platform is None or not platform.is_active:
@@ -226,6 +228,8 @@ async def create_job(
 
     db.commit()
     db.refresh(job)
+    activity.log(db, user, "media:add", f"Added media presence: {job.title or (platform.channel_name if platform else 'entry')}",
+                 entity_type="job", entity_id=job.id)
     return _to_detail(db, job)
 
 
@@ -256,7 +260,7 @@ def stream_audio(job_id: uuid.UUID, db: Session = Depends(get_db), user: User = 
 
 @router.patch("/{job_id}", response_model=JobDetailOut)
 def update_job(job_id: uuid.UUID, body: JobUpdateIn, db: Session = Depends(get_db),
-               user: User = Depends(get_current_user)) -> JobDetailOut:
+               user: User = Depends(require_perm("media:edit"))) -> JobDetailOut:
     job = db.get(Job, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -302,5 +306,7 @@ def delete_job(job_id: uuid.UUID, db: Session = Depends(get_db), user: User = De
         uf = db.get(UploadedFile, job.audio_file_id)
         if uf:
             db.delete(uf)
+    title = job.title or "entry"
     db.delete(job)  # job_steps / job_chart_uploads / job_analysts cascade
     db.commit()
+    activity.log(db, user, "media:delete", f"Deleted media presence: {title}", entity_type="job", entity_id=job_id)

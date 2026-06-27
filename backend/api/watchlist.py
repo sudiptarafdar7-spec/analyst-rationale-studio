@@ -14,7 +14,8 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from core.deps import require_admin
+from core.permissions import require_perm
+from services import activity
 from db.models import User, WatchlistCall
 from db.session import get_db
 from schemas.watchlist import (
@@ -69,7 +70,7 @@ def _serialize(call: WatchlistCall) -> WatchlistRow:
 @router.get("", response_model=WatchlistOut)
 def list_watchlist(
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("watchlist:view")),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
     instrument: str | None = Query(None),
@@ -123,7 +124,7 @@ def list_watchlist(
 def refresh_cmp(
     body: RefreshCmpIn,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("watchlist:refresh")),
 ) -> RefreshCmpOut:
     stmt = select(WatchlistCall)
     if body.ids:
@@ -137,7 +138,7 @@ def refresh_cmp(
 def refresh_one(
     call_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("watchlist:refresh")),
 ) -> WatchlistRow:
     call = db.get(WatchlistCall, call_id)
     if not call:
@@ -154,13 +155,15 @@ def refresh_one(
 def remove_call(
     call_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_perm("watchlist:delete")),
 ) -> dict:
     call = db.get(WatchlistCall, call_id)
     if not call:
         raise HTTPException(status_code=404, detail="Call not found")
+    label = call.stock_symbol or call.short_name or "stock"
     db.delete(call)
     db.commit()
+    activity.log(db, admin, "watchlist:delete", f"Removed {label} from the watchlist", entity_type="watchlist", entity_id=call_id)
     return {"removed": str(call_id)}
 
 
@@ -168,7 +171,7 @@ def remove_call(
 def get_chart(
     call_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("watchlist:view")),
 ) -> FileResponse:
     call = db.get(WatchlistCall, call_id)
     if not call or not call.chart_path or not call.job_id:

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from core.rate_limit import rate_limit_test
 from core.deps import require_admin
+from core.permissions import require_perm
 from db.enums import AiTask, ApiProvider
 from db.models import AiModel, ModelSettings, ToolConfig, User
 from db.session import get_db
@@ -49,7 +50,7 @@ def _settings_row(db: Session) -> ModelSettings:
 
 # --- AI model mappings ------------------------------------------------------
 @router.get("/ai-models", response_model=AiModelsOut)
-def get_ai_models(db: Session = Depends(get_db), _admin: User = Depends(require_admin)) -> AiModelsOut:
+def get_ai_models(db: Session = Depends(get_db), _admin: User = Depends(require_perm("admin:ai_models"))) -> AiModelsOut:
     rows = {r.task: r for r in db.scalars(select(AiModel)).all()}
     models = []
     for task in AiTask:
@@ -75,7 +76,7 @@ def update_ai_model(
     task: AiTask,
     body: AiModelUpdate,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("admin:ai_models")),
 ) -> AiModelMapping:
     if body.provider.value not in AI_PROVIDERS:
         raise HTTPException(
@@ -98,7 +99,7 @@ def update_ai_model(
 def test_task_model(
     task: AiTask,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("admin:ai_models")),
     _rl: None = Depends(rate_limit_test),
 ) -> ModelTestOut:
     """Check the task's selected provider + model is reachable with the stored key."""
@@ -119,7 +120,7 @@ def test_task_model(
 
 # --- global / advanced fallback model --------------------------------------
 @router.get("/model-settings", response_model=ModelSettingsOut)
-def get_model_settings(db: Session = Depends(get_db), _admin: User = Depends(require_admin)) -> ModelSettingsOut:
+def get_model_settings(db: Session = Depends(get_db), _admin: User = Depends(require_perm("admin:ai_models"))) -> ModelSettingsOut:
     s = _settings_row(db)
     return ModelSettingsOut(global_model=s.global_model, advanced_model=s.advanced_model)
 
@@ -128,7 +129,7 @@ def get_model_settings(db: Session = Depends(get_db), _admin: User = Depends(req
 def update_model_settings(
     body: ModelSettingsUpdate,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("admin:ai_models")),
 ) -> ModelSettingsOut:
     s = _settings_row(db)
     s.global_model = body.global_model.strip()
@@ -162,7 +163,7 @@ def _coerce(tool: str, raw: dict) -> dict:
 
 
 @router.get("/tool-configs/{tool}", response_model=ToolConfigOut)
-def get_tool_config(tool: str, db: Session = Depends(get_db), _admin: User = Depends(require_admin)) -> ToolConfigOut:
+def get_tool_config(tool: str, db: Session = Depends(get_db), _admin: User = Depends(require_perm("admin:ai_models"))) -> ToolConfigOut:
     if not is_known_tool(tool):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown tool")
     row = db.scalar(select(ToolConfig).where(ToolConfig.tool == tool))
@@ -181,7 +182,7 @@ def update_tool_config(
     tool: str,
     body: ToolConfigUpdate,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_perm("admin:ai_models")),
 ) -> ToolConfigOut:
     if not is_known_tool(tool):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown tool")

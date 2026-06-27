@@ -46,6 +46,7 @@ export default function Profile() {
   const [firstName, setFirstName] = useState(user.first_name);
   const [lastName, setLastName] = useState(user.last_name);
   const [mobile, setMobile] = useState(user.mobile ?? "");
+  const [email, setEmail] = useState(user.email);
   const [savingProfile, setSavingProfile] = useState(false);
   const [uploading, setUploading] = useState(false);
 
@@ -65,6 +66,7 @@ export default function Profile() {
         first_name: firstName,
         last_name: lastName,
         mobile: mobile || null,
+        email,
       });
       setUser(updated);
       toast.success("Profile updated");
@@ -176,7 +178,7 @@ export default function Profile() {
             </div>
             <div>
               <label className="label">Email</label>
-              <input className="input bg-slate-50 text-slate-500" value={user.email} disabled />
+              <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
           </div>
           <div className="flex items-center justify-between pt-1">

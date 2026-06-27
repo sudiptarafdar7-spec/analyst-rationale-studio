@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from core.deps import get_current_user, require_admin
+from core.permissions import require_perm
 from db.models import Analyst, User
 from db.session import get_db
 from schemas.analyst import AnalystOut
@@ -48,7 +49,7 @@ async def create_analyst(
     aliases: str | None = Form(None),
     avatar: UploadFile | None = File(None),
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("admin:analysts")),
 ) -> AnalystOut:
     avatar_path = await save_image_upload(avatar, AVATAR_SUBDIR) if avatar else None
     analyst = Analyst(
@@ -69,7 +70,7 @@ async def update_analyst(
     aliases: str | None = Form(None),
     avatar: UploadFile | None = File(None),
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("admin:analysts")),
 ) -> AnalystOut:
     analyst = db.get(Analyst, analyst_id)
     if analyst is None:
@@ -91,7 +92,7 @@ async def update_analyst(
 def delete_analyst(
     analyst_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _admin: User = Depends(require_perm("admin:analysts")),
 ) -> None:
     analyst = db.get(Analyst, analyst_id)
     if analyst is None:

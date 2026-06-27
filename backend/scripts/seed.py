@@ -35,6 +35,8 @@ def seed_admin(db) -> str:
         existing.role = UserRole.admin
         existing.is_active = True
         existing.password_hash = hash_password(settings.ADMIN_PASSWORD)
+        if not existing.permissions:
+            existing.permissions = ["*"]
         return f"admin reset: {existing.email} (password set from ADMIN_PASSWORD)"
 
     db.add(
@@ -45,6 +47,7 @@ def seed_admin(db) -> str:
             last_name=settings.ADMIN_LAST_NAME,
             role=UserRole.admin,
             is_active=True,
+            permissions=["*"],
         )
     )
     return f"admin created: {settings.ADMIN_EMAIL}"

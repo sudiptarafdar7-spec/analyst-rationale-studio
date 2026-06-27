@@ -27,6 +27,8 @@ from db.enums import GateKind, JobStatus
 from db.models import JobChartUpload, User
 from db.session import get_db
 from core.deps import get_current_user
+from core.permissions import require_perm
+from services import activity
 from services import pipeline
 
 router = APIRouter(prefix="/jobs", tags=["review"])
@@ -103,7 +105,7 @@ def post_extract(
     body: ExtractReviewIn,
     bg: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_perm("rationale:review")),
 ) -> dict:
     job = _load_owned(job_id, db, user)
     _require_gate(job, GateKind.extract_review)
@@ -111,6 +113,7 @@ def post_extract(
     os.makedirs(jf, exist_ok=True)
     with open(os.path.join(jf, "bulk-input-english.txt"), "w", encoding="utf-8") as f:
         f.write(body.text)
+    activity.log(db, user, "rationale:review", f"Reviewed step 4 (extract) of {job.title or 'a job'}", entity_type="job", entity_id=job.id)
     _resume(bg, db, job)
     return {"status": "running", "message": "Saved edits; resuming from step 5."}
 
@@ -140,7 +143,7 @@ def post_mapping(
     body: MappingReviewIn,
     bg: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_perm("rationale:review")),
 ) -> dict:
     job = _load_owned(job_id, db, user)
     _require_gate(job, GateKind.mapping_review)
@@ -163,6 +166,7 @@ def post_mapping(
         writer.writerow({c: r.get(c, "") for c in cols})
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
         f.write(buf.getvalue())
+    activity.log(db, user, "rationale:review", f"Reviewed step 7 (mapping) of {job.title or 'a job'}", entity_type="job", entity_id=job.id)
     _resume(bg, db, job)
     return {"status": "running", "message": "Saved mapping; resuming from step 8."}
 
@@ -186,7 +190,7 @@ async def post_charts(
     indices: list[int] = Form(...),
     images: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_perm("rationale:review")),
 ) -> dict:
     job = _load_owned(job_id, db, user)
     _require_gate(job, GateKind.chart_upload)
@@ -226,5 +230,6 @@ async def post_charts(
         saved += 1
 
     df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+    activity.log(db, user, "rationale:review", f"Reviewed step 9 (charts) of {job.title or 'a job'}", entity_type="job", entity_id=job.id)
     _resume(bg, db, job)
     return {"status": "running", "uploaded": saved, "message": "Saved chart images; resuming from step 10."}

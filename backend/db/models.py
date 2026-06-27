@@ -92,6 +92,9 @@ class User(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=sa.true()
     )
+    permissions: Mapped[list] = mapped_column(
+        JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")
+    )
     last_login_at: Mapped[dt.datetime | None] = mapped_column(
         sa.TIMESTAMP(timezone=True)
     )
@@ -423,4 +426,28 @@ class WatchlistCall(Base, TimestampMixin):
 
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id")
+    )
+
+
+# --- 14. user_activities ----------------------------------------------------
+class UserActivity(Base):
+    """Audit trail of who did what (media add/edit/delete, pipeline run, review,
+    chart, watchlist, user admin). Rendered as a human feed per user and overall."""
+
+    __tablename__ = "user_activities"
+    __table_args__ = (
+        sa.Index("ix_user_activities_user_created", "user_id", sa.text("created_at DESC")),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
+    )
+    actor_name: Mapped[str | None] = mapped_column(Text)
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    entity_type: Mapped[str | None] = mapped_column(Text)
+    entity_id: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )

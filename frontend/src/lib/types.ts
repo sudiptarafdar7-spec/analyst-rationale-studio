@@ -7,6 +7,7 @@ export interface User {
   last_name: string;
   mobile: string | null;
   role: Role;
+  permissions?: string[];
   avatar_path: string | null;
   is_active: boolean;
   last_login_at: string | null;

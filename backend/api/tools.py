@@ -4,6 +4,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from core.deps import get_current_user
+from db.session import get_db
+from sqlalchemy.orm import Session
+from core.permissions import require_perm
+from services import activity
 from db.models import User
 from schemas.integrations import GenerateChartIn, GenerateChartOut, InstrumentOut, MasterHit
 from services.dhan import render_chart_range
@@ -12,7 +16,7 @@ router = APIRouter(prefix="/tools", tags=["tools"])
 
 
 @router.post("/generate-chart", response_model=GenerateChartOut)
-def generate_chart(body: GenerateChartIn, _user: User = Depends(get_current_user)) -> GenerateChartOut:
+def generate_chart(body: GenerateChartIn, user: User = Depends(require_perm("chart:generate")), db: Session = Depends(get_db)) -> GenerateChartOut:
     """Render a premium candlestick chart (MA + RSI + CMP) for any instrument over
     a date range, at Daily / Weekly / Monthly resolution. Served from /uploads."""
     _save_path, public_url, cmp = render_chart_range(
@@ -24,6 +28,7 @@ def generate_chart(body: GenerateChartIn, _user: User = Depends(get_current_user
         to_date=body.to_date,
         short_name=body.short_name or "",
     )
+    activity.log(db, user, "chart:generate", f"Generated a {body.chart_type} chart for {body.short_name or body.security_id}", entity_type="chart", entity_id=body.security_id)
     return GenerateChartOut(chart_url=public_url, cmp=cmp)
 
 

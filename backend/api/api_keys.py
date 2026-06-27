@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from core.crypto import EncryptionError, decrypt, encrypt
 from core.rate_limit import rate_limit_test
 from core.deps import require_admin
+from core.permissions import require_perm
 from core.security import verify_password
 from db.enums import ApiProvider
 from db.models import ApiKey, User
@@ -51,7 +52,7 @@ def _to_out(provider: ApiProvider, row: ApiKey | None) -> ApiKeyOut:
 
 
 @router.get("", response_model=list[ApiKeyOut])
-def list_keys(db: Session = Depends(get_db), _: User = Depends(require_admin)) -> list[ApiKeyOut]:
+def list_keys(db: Session = Depends(get_db), _: User = Depends(require_perm("admin:api_keys"))) -> list[ApiKeyOut]:
     rows = {r.provider: r for r in db.scalars(select(ApiKey)).all()}
     return [_to_out(p, rows.get(p)) for p in ApiProvider]
 
@@ -61,7 +62,7 @@ def upsert_key(
     provider: ApiProvider,
     body: ApiKeyUpsert,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_perm("admin:api_keys")),
 ) -> ApiKeyOut:
     row = db.scalar(select(ApiKey).where(ApiKey.provider == provider))
     ciphertext = encrypt(body.key_value.strip())
@@ -84,7 +85,7 @@ def upsert_key(
 def delete_key(
     provider: ApiProvider,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_perm("admin:api_keys")),
 ) -> None:
     row = db.scalar(select(ApiKey).where(ApiKey.provider == provider))
     if row is not None:
@@ -96,7 +97,7 @@ def delete_key(
 def test_key(
     provider: ApiProvider,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_perm("admin:api_keys")),
     _rl: None = Depends(rate_limit_test),
 ) -> ApiKeyTestOut:
     row = db.scalar(select(ApiKey).where(ApiKey.provider == provider))
@@ -120,7 +121,7 @@ def reveal_key(
     provider: ApiProvider,
     body: ApiKeyReveal,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_perm("admin:api_keys")),
 ) -> ApiKeyRevealOut:
     # Re-authenticate the admin before returning plaintext.
     if not verify_password(body.password, admin.password_hash):
