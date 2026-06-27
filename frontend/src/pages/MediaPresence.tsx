@@ -153,6 +153,23 @@ function fmtBytes(n: number): string {
   return `${(n / 1024 ** i).toFixed(i ? 1 : 0)} ${u[i]}`;
 }
 
+function fmtTimecode(raw: string): string {
+  // Auto-format to HH:MM:SS: a colon after every 2 digits; HH is free, MM and
+  // SS are capped at 59. Max value 00:00:00 .. xx:59:59.
+  const d = raw.replace(/\D/g, "").slice(0, 6);
+  const hh = d.slice(0, 2);
+  let mm = d.slice(2, 4);
+  let ss = d.slice(4, 6);
+  if (mm.length === 2 && Number(mm) > 59) mm = "59";
+  if (ss.length === 2 && Number(ss) > 59) ss = "59";
+  let out = hh;
+  if (d.length >= 2) out += ":";
+  if (d.length > 2) out += mm;
+  if (d.length >= 4) out += ":";
+  if (d.length > 4) out += ss;
+  return out;
+}
+
 function fmtDateTime(d: string | null, t: string | null): string {
   if (!d) return "—";
   const date = new Date(`${d}T${t ?? "00:00:00"}`);
@@ -743,11 +760,11 @@ export default function MediaPresence() {
                     <div className="mt-3 grid grid-cols-2 gap-3">
                       <div>
                         <label className="label">Start time</label>
-                        <input className="input" placeholder="HH:MM:SS" value={form.audioStart} onChange={(e) => setForm((s) => ({ ...s, audioStart: e.target.value }))} />
+                        <input className="input" placeholder="HH:MM:SS" inputMode="numeric" maxLength={8} value={form.audioStart} onChange={(e) => setForm((s) => ({ ...s, audioStart: fmtTimecode(e.target.value) }))} />
                       </div>
                       <div>
                         <label className="label">End time</label>
-                        <input className="input" placeholder="HH:MM:SS" value={form.audioEnd} onChange={(e) => setForm((s) => ({ ...s, audioEnd: e.target.value }))} />
+                        <input className="input" placeholder="HH:MM:SS" inputMode="numeric" maxLength={8} value={form.audioEnd} onChange={(e) => setForm((s) => ({ ...s, audioEnd: fmtTimecode(e.target.value) }))} />
                       </div>
                       <p className="col-span-2 text-xs text-slate-400">The clip between these times is trimmed, saved, and used for transcription. Accepts HH:MM:SS, MM:SS or seconds.</p>
                     </div>
