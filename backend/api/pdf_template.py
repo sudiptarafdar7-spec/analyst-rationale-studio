@@ -20,6 +20,7 @@ from db.enums import JobStatus, UploadedFileType
 from db.models import Channel, Job, PdfTemplate, UploadedFile, User
 from db.session import get_db
 from schemas.pdf_template import PdfTemplateOut, PdfTemplateUpsert
+from services.pdf_default import load_default_pdf_template
 from services.pipeline import job_folder
 from utils.path_utils import resolve_uploaded_file_path
 
@@ -37,6 +38,19 @@ def get_template(
 ) -> PdfTemplateOut | None:
     row = _latest(db)
     return PdfTemplateOut.model_validate(row) if row else None
+
+
+@router.get("/default")
+def default_template(
+    _admin: User = Depends(require_perm("admin:pdf_template")),
+) -> dict:
+    """The baked default design (used by the 'Reset design' button). Returns
+    design=None when no default has been captured, so the UI falls back to its
+    built-in starter layout."""
+    d = load_default_pdf_template()
+    if d:
+        return d
+    return {"company_name": "", "registration_details": "", "design": None}
 
 
 @router.put("", response_model=PdfTemplateOut)

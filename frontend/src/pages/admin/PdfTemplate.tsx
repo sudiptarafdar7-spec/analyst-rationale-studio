@@ -154,6 +154,22 @@ export default function PdfTemplate() {
   const delPage = (i: number) => { setPages((ps) => (ps.length > 1 ? ps.filter((_, k) => k !== i) : ps)); setPageIdx(0); setSelId(null); };
   const setPagePurpose = (i: number, kind: PageKind, when?: PageWhen) => setPages((ps) => ps.map((p, k) => (k === i ? { ...p, kind, when: kind === "stock" ? (when ?? p.when ?? "all") : undefined } : p)));
 
+  // Reset to the baked default template (captured from the live DB via
+  // scripts/dump_default_template.py). Falls back to the built-in starter
+  // layout if no default has been bundled.
+  const resetToDefault = async () => {
+    try {
+      const d = await api.get<{ design?: (Partial<Design> & { pages?: Page[] }) | null }>("/admin/pdf-template/default");
+      const des = d?.design;
+      if (des?.pages?.length) setDesign({ theme_color: des.theme_color || defaultDesign().theme_color, pages: des.pages });
+      else setDesign(defaultDesign());
+    } catch {
+      setDesign(defaultDesign());
+    }
+    setSelId(null);
+    setPageIdx(0);
+  };
+
   useEffect(() => {
     const move = (e: PointerEvent) => {
       const g = drag.current; if (!g || !canvasRef.current) return;
@@ -471,7 +487,7 @@ export default function PdfTemplate() {
                   </div>
                 )}
               </div>
-              <button className="btn-ghost w-full" onClick={() => { setDesign(defaultDesign()); setSelId(null); setPageIdx(0); }}><RotateCcw size={15} /> Reset design</button>
+              <button className="btn-ghost w-full" onClick={resetToDefault}><RotateCcw size={15} /> Reset design</button>
             </div>
           </div>
         </>

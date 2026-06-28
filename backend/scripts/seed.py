@@ -19,8 +19,9 @@ from sqlalchemy import select
 from core.config import settings
 from core.security import hash_password
 from db.enums import AiTask, ApiProvider, UserRole
-from db.models import AiModel, ModelSettings, User
+from db.models import AiModel, ModelSettings, PdfTemplate, User
 from db.session import SessionLocal
+from services.pdf_default import load_default_pdf_template
 
 GLOBAL_MODEL_SENTINEL = "__global__"  # ai_router resolves this via model_settings
 AI_TASKS = [AiTask.translate, AiTask.speaker_detect, AiTask.extract, AiTask.polish]
@@ -78,9 +79,26 @@ def seed_ai_models(db) -> str:
     return f"ai_models created: {created or 'none (all present)'}"
 
 
+def seed_pdf_template(db) -> str:
+    """Create the default PDF template from the baked default_pdf_template.json
+    on a fresh install. No-op if a template already exists or no default is
+    bundled."""
+    if db.scalar(select(PdfTemplate)):
+        return "pdf_template exists"
+    d = load_default_pdf_template()
+    if not d:
+        return "pdf_template skipped (no bundled default)"
+    db.add(PdfTemplate(
+        company_name=(d.get("company_name") or "Company"),
+        registration_details=d.get("registration_details"),
+        design=d.get("design") or {},
+    ))
+    return "pdf_template created from bundled default"
+
+
 def main() -> None:
     with SessionLocal() as db:
-        messages = [seed_admin(db), seed_model_settings(db), seed_ai_models(db)]
+        messages = [seed_admin(db), seed_model_settings(db), seed_ai_models(db), seed_pdf_template(db)]
         db.commit()
     for m in messages:
         print(f"  - {m}")
