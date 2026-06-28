@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -114,6 +115,32 @@ def test_task_model(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"No API key configured for {provider}. Add it under Manage API Keys.",
         )
+    ok, message = test_model(provider, model, key)
+    return ModelTestOut(ok=ok, message=message, provider=provider, model=model)
+
+
+class ModelProbeIn(BaseModel):
+    provider: ApiProvider
+    model_name: str
+
+
+@router.post("/test-model", response_model=ModelTestOut)
+def test_any_model(
+    body: ModelProbeIn,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+    _rl: None = Depends(rate_limit_test),
+) -> ModelTestOut:
+    """Check that an arbitrary provider + model id is reachable with the stored key
+    (used by the per-task Test button to probe the currently-selected model)."""
+    provider = body.provider.value
+    model = (body.model_name or "").strip()
+    if model in ("", GLOBAL_MODEL_SENTINEL):
+        model = _settings_row(db).global_model
+    key = get_api_key(provider)
+    if not key:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"No API key configured for {provider}. Add it under Manage API Keys.")
     ok, message = test_model(provider, model, key)
     return ModelTestOut(ok=ok, message=message, provider=provider, model=model)
 

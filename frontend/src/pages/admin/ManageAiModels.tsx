@@ -36,6 +36,7 @@ const TASK_LABEL: Record<string, string> = {
   speaker_detect: "Detect Speakers",
   extract: "Extract Analysis",
   polish: "Polish Analysis",
+  watchlist: "Watchlist Extract",
 };
 
 function TaskCard({ mapping, catalog }: { mapping: ModelMapping; catalog: Record<string, ModelOption[]> }) {
@@ -60,7 +61,7 @@ function TaskCard({ mapping, catalog }: { mapping: ModelMapping; catalog: Record
   });
 
   const test = useMutation({
-    mutationFn: () => api.post<{ ok: boolean; message: string }>(`/admin/ai-models/${mapping.task}/test`),
+    mutationFn: () => api.post<{ ok: boolean; message: string }>("/admin/test-model", { provider, model_name: modelName }),
     onSuccess: (res) => (res.ok ? toast.success(res.message) : toast.error(res.message)),
     onError: (e) => toast.error(e instanceof ApiError ? e.message : "Test failed"),
   });

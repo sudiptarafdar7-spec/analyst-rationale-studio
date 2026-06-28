@@ -139,6 +139,13 @@ def is_known_tool(tool: str) -> bool:
 
 MODEL_CATALOG: dict[str, list[dict]] = {
     "openai": [
+        {"value": "gpt-5.5", "label": "GPT-5.5 (frontier)"},
+        {"value": "gpt-5.5-pro", "label": "GPT-5.5 Pro"},
+        {"value": "gpt-5.4", "label": "GPT-5.4"},
+        {"value": "gpt-5.4-pro", "label": "GPT-5.4 Pro"},
+        {"value": "gpt-5.4-mini", "label": "GPT-5.4 mini"},
+        {"value": "gpt-5.4-nano", "label": "GPT-5.4 nano"},
+        {"value": "gpt-5-mini", "label": "GPT-5 mini"},
         {"value": "gpt-4o", "label": "GPT-4o"},
         {"value": "gpt-4o-mini", "label": "GPT-4o mini"},
         {"value": "gpt-4.1", "label": "GPT-4.1"},
