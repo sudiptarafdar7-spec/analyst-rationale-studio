@@ -1,20 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlignCenter, AlignJustify, AlignLeft, AlignRight, Database, Eye, EyeOff, FileText, Heading,
-  Image as ImageIcon, Layout, Loader2, Plus, RotateCcw, Save, Square, Trash2, Type,
+  AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, Copy, Database, Eye, EyeOff, FileText, Heading,
+  Image as ImageIcon, Italic, Layout, Loader2, Lock, MoveDown, MoveUp, Pilcrow, Plus, RotateCcw, Save, Square,
+  Trash2, Type, Underline, Unlock,
 } from "lucide-react";
 import { api, ApiError } from "../../lib/api";
 import { toast } from "../../store/toast";
 import RichTextEditor from "../../components/RichTextEditor";
 
 type Align = "left" | "center" | "right" | "justify";
-type ElType = "text" | "heading" | "field" | "image" | "box";
+type ElType = "text" | "heading" | "field" | "image" | "box" | "richtext";
 interface El {
   id: string; type: ElType; x: number; y: number; w: number; h: number;
   visible?: boolean; text?: string; field?: string;
   size?: number; weight?: "normal" | "bold"; color?: string; align?: Align;
   bg?: string; borderW?: number; borderColor?: string; radius?: number; pad?: number;
+  html?: string; font?: "sans" | "serif" | "mono"; italic?: boolean; underline?: boolean; lh?: number; opacity?: number; locked?: boolean;
 }
 interface Page { id: string; bg?: string; elements: El[] }
 interface Design { theme_color: string; stock_pages: Page[]; fixed_pages: Page[] }
@@ -80,7 +82,7 @@ function defaultDesign(): Design {
 
 const PAGE_W = 460, PAGE_H = Math.round(460 * 1.4142), PT = 460 / 595;
 const ALIGN_ICON: Record<Align, typeof AlignLeft> = { left: AlignLeft, center: AlignCenter, right: AlignRight, justify: AlignJustify };
-const TYPE_ICON: Record<ElType, typeof Type> = { text: Type, heading: Heading, field: Database, image: ImageIcon, box: Square };
+const TYPE_ICON: Record<ElType, typeof Type> = { text: Type, heading: Heading, richtext: Pilcrow, field: Database, image: ImageIcon, box: Square };
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 export default function PdfTemplate() {
@@ -126,9 +128,13 @@ export default function PdfTemplate() {
   const patchEl = (id: string, patch: Partial<El>) =>
     setPages((ps) => ps.map((p, i) => (i === safeIdx ? { ...p, elements: p.elements.map((e) => (e.id === id ? { ...e, ...patch } : e)) } : p)));
   const delEl = (id: string) => { setPages((ps) => ps.map((p, i) => (i === safeIdx ? { ...p, elements: p.elements.filter((e) => e.id !== id) } : p))); setSelId(null); };
+  const dupEl = (el: El) => { const n = { ...el, id: uid(), x: Math.min(95, el.x + 2), y: Math.min(95, el.y + 2) }; setPages((ps) => ps.map((p, i) => (i === safeIdx ? { ...p, elements: [...p.elements, n] } : p))); setSelId(n.id); };
+  const layer = (id: string, dir: 1 | -1) => setPages((ps) => ps.map((p, i) => { if (i !== safeIdx) return p; const arr = [...p.elements]; const k = arr.findIndex((e) => e.id === id); const j = k + dir; if (k < 0 || j < 0 || j >= arr.length) return p; [arr[k], arr[j]] = [arr[j], arr[k]]; return { ...p, elements: arr }; }));
+  const alignPage = (el: El, which: string) => { const m: Record<string, Partial<El>> = { left: { x: 0 }, hcenter: { x: (100 - el.w) / 2 }, right: { x: 100 - el.w }, top: { y: 0 }, vcenter: { y: (100 - el.h) / 2 }, bottom: { y: 100 - el.h } }; patchEl(el.id, m[which]); };
   const addEl = (type: ElType) => {
-    const base: El = { id: uid(), type, x: 30, y: 42, w: 40, h: 6, visible: true, color: "#111111", align: "left",
+    const base: El = { id: uid(), type, x: 30, y: 42, w: 40, h: 6, visible: true, color: "#111111", align: "left", font: "sans", opacity: 1,
       size: type === "heading" ? 16 : 11, weight: type === "heading" ? "bold" : "normal", pad: type === "box" || type === "image" ? 0 : 2 };
+    if (type === "richtext") { base.html = "<p>Edit this <strong>rich</strong> text…</p>"; base.w = 60; base.h = 18; base.align = "left"; }
     if (type === "field") base.field = section === "stock" ? "stock_name" : "company_name";
     if (type === "image") { base.field = section === "stock" ? "chart" : "logo"; base.h = 24; }
     if (type === "box") { base.bg = design.theme_color; base.color = undefined; }
@@ -162,13 +168,28 @@ export default function PdfTemplate() {
     return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
   }, [safeIdx, section]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!selId) return;
+      const ae = document.activeElement as HTMLElement | null;
+      if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable)) return;
+      const map: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+      const d = map[e.key]; if (!d) return;
+      const el = pageRef.current?.elements.find((x) => x.id === selId); if (!el || el.locked) return;
+      e.preventDefault(); const st = e.shiftKey ? 2 : 0.5;
+      patchEl(selId, { x: clamp(el.x + d[0] * st, 0, 100 - el.w), y: clamp(el.y + d[1] * st, 0, 100 - el.h) });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selId, section, safeIdx]);
+
   const save = useMutation({
     mutationFn: () => api.put("/admin/pdf-template", { ...content, design }),
     onSuccess: () => { toast.success("PDF template saved"); qc.invalidateQueries({ queryKey: ["pdf-template"] }); },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : "Could not save template"),
   });
 
-  const selMeta = useMemo(() => (sel ? { isText: sel.type === "text" || sel.type === "heading" || sel.type === "field", isField: sel.type === "field", isImage: sel.type === "image", isBox: sel.type === "box" } : null), [sel]);
+  const selMeta = useMemo(() => (sel ? { isText: ["text", "heading", "field", "richtext"].includes(sel.type), isField: sel.type === "field", isImage: sel.type === "image", isBox: sel.type === "box", isRich: sel.type === "richtext" } : null), [sel]);
   const fieldOpts = section === "stock" ? TEXT_FIELDS : TEXT_FIELDS.filter((f) => !f.stockOnly);
   const imgOpts = section === "stock" ? IMAGE_FIELDS : IMAGE_FIELDS.filter((f) => !f.stockOnly);
   const stripTags = (t: string) => t.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
@@ -183,6 +204,7 @@ export default function PdfTemplate() {
 
   return (
     <div className="space-y-5">
+      <style>{`.rte-preview h1,.rte-preview h2,.rte-preview h3{font-weight:700;margin:.15em 0;line-height:1.1}.rte-preview ul{list-style:disc;padding-left:1.1em;margin:.2em 0}.rte-preview ol{list-style:decimal;padding-left:1.1em;margin:.2em 0}.rte-preview p{margin:.2em 0}.rte-preview strong,.rte-preview b{font-weight:700}.rte-preview em,.rte-preview i{font-style:italic}.rte-preview u{text-decoration:underline}`}</style>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-50 text-brand-700"><FileText size={20} /></span>
@@ -226,8 +248,8 @@ export default function PdfTemplate() {
             {/* Canvas */}
             <div className="card flex flex-col items-center gap-3 overflow-auto p-6">
               <div className="flex flex-wrap justify-center gap-1.5">
-                {(["heading", "text", "field", "image", "box"] as ElType[]).map((t) => { const I = TYPE_ICON[t]; return (
-                  <button key={t} onClick={() => addEl(t)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:border-brand hover:text-brand"><I size={13} /> {t === "field" ? "Field" : t[0].toUpperCase() + t.slice(1)}</button>
+                {(["heading", "text", "richtext", "field", "image", "box"] as ElType[]).map((t) => { const I = TYPE_ICON[t]; return (
+                  <button key={t} onClick={() => addEl(t)} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:border-brand hover:text-brand"><I size={13} /> {t === "field" ? "Field" : t === "richtext" ? "Rich text" : t[0].toUpperCase() + t.slice(1)}</button>
                 ); })}
               </div>
               {!page ? <div className="grid h-40 place-items-center text-sm text-slate-400">No pages — add one above.</div> : (
@@ -239,7 +261,7 @@ export default function PdfTemplate() {
                     const isImg = el.type === "image", isBox = el.type === "box";
                     const label = el.type === "field" ? previewText(el) : isImg ? `🖼 ${el.field}` : el.text ?? "";
                     return (
-                      <div key={el.id} onPointerDown={(e) => { e.stopPropagation(); setSelId(el.id); drag.current = { id: el.id, mode: "move", sx: e.clientX, sy: e.clientY, o: el }; }}
+                      <div key={el.id} onPointerDown={(e) => { e.stopPropagation(); setSelId(el.id); if (!el.locked) drag.current = { id: el.id, mode: "move", sx: e.clientX, sy: e.clientY, o: el }; }}
                         className={`absolute cursor-move overflow-hidden ${isSel ? "outline outline-2 outline-brand" : "hover:outline hover:outline-1 hover:outline-brand/40"}`}
                         style={{
                           left: `${el.x}%`, top: `${el.y}%`, width: `${el.w}%`, height: `${el.h}%`,
@@ -252,9 +274,11 @@ export default function PdfTemplate() {
                           padding: `${Math.max(0, el.pad ?? 2) * PT}px`, lineHeight: 1.25,
                           textAlign: (el.align === "justify" ? "left" : el.align) as React.CSSProperties["textAlign"],
                         }}>
-                        {isImg && el.field === "chart" && sample?.stock?.chart
-                          ? <img src={sample.stock.chart} alt="" className="pointer-events-none h-full w-full object-contain" />
-                          : <span className="pointer-events-none block w-full" style={{ whiteSpace: el.field === "analysis" || el.field === "disclaimer" || el.field === "disclosure" ? "normal" : "nowrap", overflow: "hidden", color: isBox ? "rgba(255,255,255,.85)" : undefined }}>{label}</span>}
+                        {el.type === "richtext"
+                          ? <div className="rte-preview pointer-events-none w-full overflow-hidden" style={{ fontSize: (el.size ?? 11) * PT, opacity: el.opacity ?? 1 }} dangerouslySetInnerHTML={{ __html: el.html ?? "" }} />
+                          : isImg && el.field === "chart" && sample?.stock?.chart
+                          ? <img src={sample.stock.chart} alt="" className="pointer-events-none h-full w-full object-contain" style={{ opacity: el.opacity ?? 1 }} />
+                          : <span className="pointer-events-none block w-full" style={{ whiteSpace: el.field === "analysis" || el.field === "disclaimer" || el.field === "disclosure" ? "normal" : "nowrap", overflow: "hidden", opacity: el.opacity ?? 1, fontStyle: el.italic ? "italic" : undefined, textDecoration: el.underline ? "underline" : undefined, color: isBox ? "rgba(255,255,255,.85)" : undefined }}>{label}</span>}
                         {isSel && <span onPointerDown={(e) => { e.stopPropagation(); drag.current = { id: el.id, mode: "resize", sx: e.clientX, sy: e.clientY, o: el }; }} className="absolute bottom-0 right-0 h-3 w-3 cursor-nwse-resize bg-brand" style={{ borderRadius: 2 }} />}
                       </div>
                     );
@@ -285,9 +309,13 @@ export default function PdfTemplate() {
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-semibold capitalize text-slate-700">{sel.type}</span>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => patchEl(sel.id, { visible: sel.visible === false })} className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100">{sel.visible === false ? <EyeOff size={14} /> : <Eye size={14} />}</button>
-                        <button onClick={() => delEl(sel.id)} className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-danger"><Trash2 size={14} /></button>
+                      <div className="flex items-center gap-0.5">
+                        <button title="Bring forward" onClick={() => layer(sel.id, 1)} className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100"><MoveUp size={14} /></button>
+                        <button title="Send backward" onClick={() => layer(sel.id, -1)} className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100"><MoveDown size={14} /></button>
+                        <button title="Duplicate" onClick={() => dupEl(sel)} className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100"><Copy size={14} /></button>
+                        <button title={sel.locked ? "Unlock" : "Lock"} onClick={() => patchEl(sel.id, { locked: !sel.locked })} className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100">{sel.locked ? <Lock size={14} /> : <Unlock size={14} />}</button>
+                        <button title={sel.visible === false ? "Show" : "Hide"} onClick={() => patchEl(sel.id, { visible: sel.visible === false })} className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100">{sel.visible === false ? <EyeOff size={14} /> : <Eye size={14} />}</button>
+                        <button title="Delete" onClick={() => delEl(sel.id)} className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-danger"><Trash2 size={14} /></button>
                       </div>
                     </div>
                     {selMeta.isField && (
@@ -332,6 +360,46 @@ export default function PdfTemplate() {
                       <div><label className="label">B.colour</label><input type="color" className="h-9 w-full cursor-pointer rounded border border-slate-200" value={sel.borderColor ?? "#cccccc"} onChange={(e) => patchEl(sel.id, { borderColor: e.target.value })} /></div>
                       <div><label className="label">Radius</label><input type="number" className="input h-9" value={sel.radius ?? 0} onChange={(e) => patchEl(sel.id, { radius: Number(e.target.value) })} /></div>
                     </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div><label className="label">Opacity</label><input type="range" min={0} max={1} step={0.05} className="h-9 w-full" value={sel.opacity ?? 1} onChange={(e) => patchEl(sel.id, { opacity: Number(e.target.value) })} /></div>
+                      <div><label className="label">Line height</label><input type="number" step={0.05} className="input h-9" value={sel.lh ?? 1.34} onChange={(e) => patchEl(sel.id, { lh: Number(e.target.value) })} /></div>
+                    </div>
+                    {selMeta.isText && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div><label className="label">Font</label><select className="input h-9" value={sel.font ?? "sans"} onChange={(e) => patchEl(sel.id, { font: e.target.value as "sans" | "serif" | "mono" })}><option value="sans">Sans</option><option value="serif">Serif</option><option value="mono">Mono</option></select></div>
+                        {!selMeta.isRich && (
+                          <div><label className="label">Style</label>
+                            <div className="flex gap-1">
+                              <button title="Bold" onClick={() => patchEl(sel.id, { weight: sel.weight === "bold" ? "normal" : "bold" })} className={`grid h-9 flex-1 place-items-center rounded-lg border ${sel.weight === "bold" ? "border-brand bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500"}`}><Bold size={13} /></button>
+                              <button title="Italic" onClick={() => patchEl(sel.id, { italic: !sel.italic })} className={`grid h-9 flex-1 place-items-center rounded-lg border ${sel.italic ? "border-brand bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500"}`}><Italic size={13} /></button>
+                              <button title="Underline" onClick={() => patchEl(sel.id, { underline: !sel.underline })} className={`grid h-9 flex-1 place-items-center rounded-lg border ${sel.underline ? "border-brand bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500"}`}><Underline size={13} /></button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div>
+                      <label className="label">Position &amp; size (%)</label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {(["x", "y", "w", "h"] as const).map((k) => (
+                          <input key={k} type="number" className="input h-9" title={k.toUpperCase()} value={Math.round((sel[k] ?? 0) * 10) / 10} onChange={(e) => patchEl(sel.id, { [k]: clamp(Number(e.target.value), 0, 100) })} />
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="label">Align to page</label>
+                      <div className="flex gap-1">
+                        {([["left", AlignLeft], ["hcenter", AlignCenter], ["right", AlignRight]] as const).map(([w2, I]) => (
+                          <button key={w2} onClick={() => alignPage(sel, w2)} className="grid h-8 flex-1 place-items-center rounded-lg border border-slate-200 text-slate-500 hover:border-brand hover:text-brand"><I size={13} /></button>
+                        ))}
+                        <button onClick={() => alignPage(sel, "top")} className="h-8 flex-1 rounded-lg border border-slate-200 text-[11px] text-slate-500 hover:border-brand hover:text-brand">Top</button>
+                        <button onClick={() => alignPage(sel, "vcenter")} className="h-8 flex-1 rounded-lg border border-slate-200 text-[11px] text-slate-500 hover:border-brand hover:text-brand">Mid</button>
+                        <button onClick={() => alignPage(sel, "bottom")} className="h-8 flex-1 rounded-lg border border-slate-200 text-[11px] text-slate-500 hover:border-brand hover:text-brand">Bot</button>
+                      </div>
+                    </div>
+                    {selMeta.isRich && (
+                      <div><label className="label">Rich content</label><RichTextEditor value={sel.html ?? ""} onChange={(html) => patchEl(sel.id, { html })} /></div>
+                    )}
                   </div>
                 )}
               </div>

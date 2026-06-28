@@ -194,6 +194,11 @@ def run(job_folder, overrides=None):
             pdfmetrics.registerFont(TTFont(BASE_BLD, config["font_bold_path"]))
         else:
             BASE_BLD = "Helvetica-Bold"
+        try:
+            from reportlab.pdfbase.pdfmetrics import registerFontFamily
+            registerFontFamily(BASE_REG, normal=BASE_REG, bold=BASE_BLD, italic=BASE_REG, boldItalic=BASE_BLD)
+        except Exception:
+            pass
 
         DESIGN = config.get("design") or {}
         _ELS = DESIGN.get("elements") or {}
@@ -433,6 +438,27 @@ def run(job_folder, overrides=None):
                     return config.get("channel_logo_path")
                 return None
 
+            def _font_pair(el):
+                return {"serif": ("Times-Roman", "Times-Bold"),
+                        "mono": ("Courier", "Courier-Bold")}.get(el.get("font", "sans"), (BASE_REG, BASE_BLD))
+
+            def _rich_styles(el):
+                reg, bld = _font_pair(el)
+                sz = _num(el.get("size"), 10)
+                col = _hexc(el.get("color"), "#111111")
+                al = _ALIGN.get(el.get("align"), TA_LEFT)
+                lh = _num(el.get("lh"), 1.34)
+                try:
+                    from reportlab.pdfbase.pdfmetrics import registerFontFamily
+                    registerFontFamily(reg, normal=reg, bold=bld, italic=reg, boldItalic=bld)
+                except Exception:
+                    pass
+                body = PS("rb" + os.urandom(3).hex(), fontName=reg, fontSize=sz, leading=sz * lh,
+                          textColor=col, alignment=al, spaceAfter=sz * 0.45)
+                head = PS("rh" + os.urandom(3).hex(), fontName=bld, fontSize=sz * 1.4, leading=sz * 1.4 * 1.2,
+                          textColor=col, alignment=al, spaceBefore=sz * 0.6, spaceAfter=sz * 0.3)
+                return body, head
+
             def _draw_el(c, el, row, pageno):
                 """Draw one element. Returns leftover flowables for overflow fields, else None."""
                 if el.get("visible", True) is False:
@@ -440,9 +466,13 @@ def run(job_folder, overrides=None):
                 typ = el.get("type", "text")
                 x, y, w, h = _box(el)
                 pad = max(0.0, _num(el.get("pad"), 2))
+                opacity = _num(el.get("opacity"), 1)
                 if el.get("bg"):
+                    c.saveState()
+                    c.setFillAlpha(opacity)
                     c.setFillColor(_hexc(el.get("bg"), "#ffffff"))
                     c.rect(x, y, w, h, fill=1, stroke=0)
+                    c.restoreState()
                 if typ == "image":
                     pth = _field_image(el.get("field", "chart"), row)
                     if pth and os.path.exists(pth):
@@ -465,11 +495,27 @@ def run(job_folder, overrides=None):
                     return None
                 key = el.get("field")
                 # rich disclaimer / disclosure: render the HTML, flow overflow
+                if typ == "richtext":
+                    html = el.get("html") or ""
+                    if not html.strip():
+                        return None
+                    bs, hs = _rich_styles(el)
+                    if opacity < 1:
+                        c.setFillAlpha(opacity)
+                    rem = _frame_remainder(c, x, y, w, h, create_html_flowables(html, bs, hs), pad=pad)
+                    if opacity < 1:
+                        c.setFillAlpha(1)
+                    return rem or None
                 if typ == "field" and key in ("disclaimer", "disclosure"):
                     html = config.get(f"{key}_text")
                     if not html:
                         return None
-                    rem = _frame_remainder(c, x, y, w, h, create_html_flowables(html, indented_body), pad=pad)
+                    bs, hs = _rich_styles(el)
+                    if opacity < 1:
+                        c.setFillAlpha(opacity)
+                    rem = _frame_remainder(c, x, y, w, h, create_html_flowables(html, bs, hs), pad=pad)
+                    if opacity < 1:
+                        c.setFillAlpha(1)
                     return rem or None
                 if typ == "field" and key == "page_no":
                     text = f"Page {pageno}"
@@ -481,11 +527,22 @@ def run(job_folder, overrides=None):
                     return None
                 dsize = 17 if typ == "heading" else 10.8
                 sz = _num(el.get("size"), dsize)
-                style = PS("pg_" + os.urandom(4).hex(), fontSize=sz, leading=sz * 1.32,
+                reg, bld = _font_pair(el)
+                is_bold = el.get("weight", "bold" if typ == "heading" else "normal") == "bold"
+                style = PS("pg_" + os.urandom(4).hex(), fontSize=sz, leading=sz * _num(el.get("lh"), 1.32),
                            textColor=_hexc(el.get("color"), "#111111"),
                            alignment=_ALIGN.get(el.get("align"), TA_LEFT),
-                           fontName=BASE_BLD if el.get("weight", "bold" if typ == "heading" else "normal") == "bold" else BASE_REG)
-                rem = _frame_remainder(c, x, y, w, h, [Paragraph(_esc(text), style)], pad=pad)
+                           fontName=bld if is_bold else reg)
+                markup = _esc(text)
+                if el.get("italic"):
+                    markup = f"<i>{markup}</i>"
+                if el.get("underline"):
+                    markup = f"<u>{markup}</u>"
+                if opacity < 1:
+                    c.setFillAlpha(opacity)
+                rem = _frame_remainder(c, x, y, w, h, [Paragraph(markup, style)], pad=pad)
+                if opacity < 1:
+                    c.setFillAlpha(1)
                 # Only long fields flow onto continuation pages; everything else clips.
                 if typ == "field" and key in FLOW_FIELDS:
                     return rem or None
