@@ -13,7 +13,7 @@ interface Job {
   id: string; title: string | null; platform_name: string | null; platform_logo: string | null;
   analysts: AnalystRef[]; video_date: string | null; signed_at: string | null;
 }
-interface Facets { platforms: { id: string; name: string }[]; analysts: { id: string; name: string }[]; years: number[] }
+interface Facets { platforms: { value: string; label: string }[]; analysts: { id: string; name: string }[]; years: number[] }
 interface ListOut { items: Job[]; total: number; facets: Facets }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -23,7 +23,7 @@ export default function SignedRationale() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const isReviewer = useAuthStore((s) => s.user?.role === "reviewer");
-  const [f, setF] = useState({ platform_id: "", analyst_id: "", year: "", month: "", day: "", q: "" });
+  const [f, setF] = useState({ platform_type: "", analyst_id: "", year: "", month: "", day: "", q: "" });
 
   const qs = useMemo(() => {
     const p = new URLSearchParams();
@@ -70,8 +70,8 @@ export default function SignedRationale() {
           <input className="input h-9 pl-8" placeholder="Title or channel…" value={f.q} onChange={(e) => setF((s) => ({ ...s, q: e.target.value }))} />
         </div>
         <div><label className="label">Platform</label>
-          <select className="input h-9 w-40" value={f.platform_id} onChange={sel("platform_id")}>
-            <option value="">All</option>{facets.platforms.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          <select className="input h-9 w-40" value={f.platform_type} onChange={sel("platform_type")}>
+            <option value="">All</option>{facets.platforms.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select></div>
         <div><label className="label">Analyst</label>
           <select className="input h-9 w-40" value={f.analyst_id} onChange={sel("analyst_id")}>
@@ -89,7 +89,7 @@ export default function SignedRationale() {
           <select className="input h-9 w-20" value={f.day} onChange={sel("day")}>
             <option value="">All</option>{Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
           </select></div>
-        {dirty && <button className="btn-ghost h-9" onClick={() => setF({ platform_id: "", analyst_id: "", year: "", month: "", day: "", q: "" })}><X size={14} /> Clear</button>}
+        {dirty && <button className="btn-ghost h-9" onClick={() => setF({ platform_type: "", analyst_id: "", year: "", month: "", day: "", q: "" })}><X size={14} /> Clear</button>}
       </div>
 
       {list.isLoading ? (

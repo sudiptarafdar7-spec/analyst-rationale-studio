@@ -57,7 +57,7 @@ def list_pending(db: Session = Depends(get_db), user: User = Depends(get_current
 def list_signed(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-    platform_id: uuid.UUID | None = Query(None),
+    platform_type: str | None = Query(None),
     analyst_id: uuid.UUID | None = Query(None),
     year: int | None = Query(None),
     month: int | None = Query(None),
@@ -80,14 +80,23 @@ def list_signed(
     def _date(j: Job):
         return j.signed_at or j.created_at
 
-    facet_platforms = [{"id": str(p.id), "name": p.channel_name} for p in plats.values()]
+    _PLABEL = {"youtube": "YouTube", "facebook": "Facebook", "instagram": "Instagram",
+               "telegram": "Telegram", "whatsapp": "WhatsApp", "other": "Other"}
+    _types_present: dict[str, int] = {}
+    for _j in jobs:
+        _p = plats.get(_j.platform_id)
+        if _p:
+            _t = _p.platform_type.value
+            _types_present[_t] = _types_present.get(_t, 0) + 1
+    facet_platforms = [{"value": t, "label": _PLABEL.get(t, t.title())} for t in _types_present]
     facet_analysts = [{"id": str(a.id), "name": a.name} for a in analysts.values()]
     facet_years = sorted({_date(j).year for j in jobs if _date(j)}, reverse=True)
 
     # Apply filters.
     def keep(j: Job) -> bool:
         d = _date(j)
-        if platform_id and j.platform_id != platform_id:
+        jp = plats.get(j.platform_id)
+        if platform_type and (jp is None or jp.platform_type.value != platform_type):
             return False
         if analyst_id and analyst_id not in job_analyst_ids.get(j.id, set()):
             return False
