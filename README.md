@@ -97,3 +97,50 @@ DATABASE_URL=postgresql+psycopg2://<user>:<pw>@localhost/ars pytest tests/test_e
 - PDFs and intermediate artifacts are downloadable via short-lived **signed URLs**
   (HMAC + expiry) in addition to bearer auth.
 - Uploads are validated by type/size and stored outside the web root.
+
+## Deployment (VPS)
+
+Production runs on a single Ubuntu server behind nginx, with the FastAPI app
+under systemd (`ars-backend`) and PostgreSQL local. The React app is built to
+static files and served by nginx; `/api`, `/uploads` and `/ws` are proxied to
+the backend on `127.0.0.1:8000`.
+
+**First-time deploy** — on a fresh Ubuntu 22.04/24.04 box, log in and run one line:
+
+```bash
+ssh root@147.79.68.141
+curl -fsSL https://raw.githubusercontent.com/sudiptarafdar7-spec/analyst-rationale-studio/main/deploy.sh | bash
+```
+
+This installs all dependencies, clones the repo to `/opt/analyst-rationale-studio`,
+creates the `ars` database, writes `.env` with freshly generated secrets, builds
+the frontend, configures nginx + systemd, applies the schema, seeds the admin
+user and obtains an HTTPS certificate for `researchrationale.in`.
+
+Default admin (change the password after first login):
+
+```
+admin@phdcapital.in  /  Admin@123   (Pradip Halder)
+```
+
+Provider API keys (OpenAI, Anthropic, Gemini, Deepgram, YouTube, Dhan) are added
+in-app under **Admin → Manage API Keys** — they are never stored in `.env`.
+
+**Updates** — to ship new commits (frontend, backend, API or schema changes):
+
+```bash
+ssh root@147.79.68.141
+cd /opt/analyst-rationale-studio && bash update.sh
+```
+
+`update.sh` pulls the latest code, installs new deps, applies migrations /
+schema self-heal, rebuilds the frontend and restarts the API. It never touches
+`.env` and never resets the admin password.
+
+Useful commands:
+
+```bash
+systemctl status ars-backend       # API service
+journalctl -u ars-backend -f       # live API logs
+nginx -t && systemctl reload nginx # nginx
+```

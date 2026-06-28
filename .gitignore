@@ -33,3 +33,25 @@ Thumbs.db
 
 # --- Logs ---
 *.log
+
+# --- Generated media / deliverables (never commit) ---
+# Runtime job artifacts already covered above (job_files/, uploads/). These
+# patterns stop stray exports from being pushed from anywhere in the tree.
+backend/job_files/**
+backend/uploads/**
+*.pdf
+*.mp3
+*.mp4
+*.wav
+*.m4a
+*.aac
+*.webm
+
+# --- Build / tooling cruft ---
+frontend/vite.config.ts.timestamp-*.mjs
+frontend/__deltest
+*.tmp
+*.bak
+
+# --- Deploy-time files (generated on the server) ---
+/.env
