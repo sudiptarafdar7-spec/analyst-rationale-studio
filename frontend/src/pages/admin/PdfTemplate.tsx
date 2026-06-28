@@ -268,7 +268,6 @@ export default function PdfTemplate() {
                 {pages.length > 1 && <button onClick={() => delPage(safeIdx)} title="Delete page" className="grid h-7 w-7 place-items-center rounded-lg border border-slate-200 text-slate-400 hover:border-danger hover:text-danger"><Trash2 size={12} /></button>}
               </div>
             )}
-            <span className="ml-auto text-xs text-slate-400">{page?.kind === "fixed" ? "Rendered once, after all stocks" : page?.when === "first" ? "Used for the FIRST stock only" : page?.when === "rest" ? "Used for stocks 2, 3, …" : "Used for EVERY stock"}</span>
           </div>
 
           <div className="grid gap-5 lg:grid-cols-[1fr_300px]">
