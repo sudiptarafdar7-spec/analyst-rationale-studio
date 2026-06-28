@@ -370,6 +370,139 @@ def run(job_folder, overrides=None):
             draw_blue_stripe_header(c)
             draw_footer(c)
 
+        # ---- Page-based builder: stock_pages (repeated per stock) + fixed_pages ----
+        if DESIGN.get("stock_pages") or DESIGN.get("fixed_pages"):
+            import xml.sax.saxutils as _sx
+            theme_hex = DESIGN.get("theme_color") or cfg.get("theme_color", "#6C4CF1")
+
+            def _esc(t):
+                return _sx.escape(str(t if t is not None else ""))
+
+            def _strip_html(t):
+                t = t or ""
+                if "<" in t and ">" in t:
+                    t = " ".join(re.sub(r"<[^>]+>", " ", t).split())
+                return t
+
+            def _box(el):
+                x = _num(el.get("x"), 0) / 100.0 * PAGE_W
+                w = _num(el.get("w"), 10) / 100.0 * PAGE_W
+                h = _num(el.get("h"), 5) / 100.0 * PAGE_H
+                y_top = _num(el.get("y"), 0) / 100.0 * PAGE_H
+                return x, PAGE_H - y_top - h, w, h
+
+            def _frame(c, x, y, w, h, flowables, pad=2):
+                try:
+                    Frame(x, y, w, h, leftPadding=pad, rightPadding=pad, topPadding=pad,
+                          bottomPadding=pad, showBoundary=0).addFromList(list(flowables), c)
+                except Exception as _e:
+                    print(f"  (skip overflow element: {_e})")
+
+            def _field_text(key, row):
+                rv = (lambda col: str(row.get(col, "") or "").strip() if row is not None else "")
+                return {
+                    "stock_name": rv("LISTED NAME") or rv("INPUT STOCK"),
+                    "stock_symbol": rv("STOCK SYMBOL"),
+                    "short_name": rv("SHORT NAME"),
+                    "date": rv("DATE"),
+                    "analysis": rv("ANALYSIS"),
+                    "company_name": config.get("company_name", ""),
+                    "registration": _strip_html(config.get("registration_details")),
+                    "channel": config.get("channel_name", ""),
+                    "platform": config.get("platform", ""),
+                    "url": config.get("youtube_url", ""),
+                }.get(key, "")
+
+            def _field_image(key, row):
+                if key == "chart":
+                    pth = str(row.get("CHART PATH", "") or "").strip() if row is not None else ""
+                    if pth and not os.path.isabs(pth):
+                        pth = os.path.join(job_folder, pth)
+                    return pth
+                if key == "logo":
+                    return config.get("company_logo_path")
+                if key == "channel_logo":
+                    return config.get("channel_logo_path")
+                return None
+
+            def _draw_el(c, el, row, pageno):
+                if el.get("visible", True) is False:
+                    return
+                typ = el.get("type", "text")
+                x, y, w, h = _box(el)
+                # background / border for any element
+                if el.get("bg"):
+                    c.setFillColor(_hexc(el.get("bg"), "#ffffff"))
+                    c.rect(x, y, w, h, fill=1, stroke=0)
+                if typ == "image":
+                    pth = _field_image(el.get("field", "chart"), row)
+                    if pth and os.path.exists(pth):
+                        try:
+                            c.drawImage(pth, x, y, w, h, preserveAspectRatio=True, anchor="c", mask="auto")
+                        except Exception:
+                            pass
+                    bw = _num(el.get("borderW"), 0)
+                    if bw > 0:
+                        c.setStrokeColor(_hexc(el.get("borderColor"), "#cccccc"))
+                        c.setLineWidth(bw)
+                        c.rect(x, y, w, h, fill=0, stroke=1)
+                    return
+                bw = _num(el.get("borderW"), 0)
+                if bw > 0:
+                    c.setStrokeColor(_hexc(el.get("borderColor"), "#cccccc"))
+                    c.setLineWidth(bw)
+                    c.rect(x, y, w, h, fill=0, stroke=1)
+                if typ == "box":
+                    return
+                # text / heading / field
+                key = el.get("field")
+                if typ == "field" and key in ("disclaimer", "disclosure"):
+                    html = config.get(f"{key}_text")
+                    if html:
+                        _frame(c, x, y, w, h, create_html_flowables(html, indented_body))
+                    return
+                if typ == "field" and key == "page_no":
+                    text = f"Page {pageno}"
+                elif typ == "field":
+                    text = _field_text(key, row)
+                else:
+                    text = el.get("text", "")
+                if not str(text).strip():
+                    return
+                dsize = 17 if typ == "heading" else 10.8
+                sz = _num(el.get("size"), dsize)
+                style = PS("pg_" + os.urandom(4).hex(), fontSize=sz, leading=sz * 1.32,
+                           textColor=_hexc(el.get("color"), "#111111"),
+                           alignment=_ALIGN.get(el.get("align"), TA_LEFT),
+                           fontName=BASE_BLD if el.get("weight", "bold" if typ == "heading" else "normal") == "bold" else BASE_REG)
+                _frame(c, x, y, w, h, [Paragraph(_esc(text), style)], pad=1)
+
+            def _draw_page(c, pg, row, pageno):
+                if pg.get("bg"):
+                    c.setFillColor(_hexc(pg.get("bg"), "#ffffff"))
+                    c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
+                for el in pg.get("elements", []):
+                    _draw_el(c, el, row, pageno)
+
+            c = pdfcanvas.Canvas(output_pdf, pagesize=A4)
+            stock_pages = DESIGN.get("stock_pages") or []
+            fixed_pages = DESIGN.get("fixed_pages") or []
+            pageno = 0
+            for _, row in df.iterrows():
+                for pg in stock_pages:
+                    pageno += 1
+                    _draw_page(c, pg, row, pageno)
+                    c.showPage()
+            for pg in fixed_pages:
+                pageno += 1
+                _draw_page(c, pg, None, pageno)
+                c.showPage()
+            if pageno == 0:
+                c.showPage()
+            c.save()
+            print(f"\u2705 PDF generated (page builder): {output_pdf}")
+            return {"success": True, "output_file": output_pdf}
+
         # ---- Absolute (free-form) layout: builder X/Y/W/H drive the PDF ----
         if DESIGN.get("layout_mode") == "absolute":
             import xml.sax.saxutils as _sx
