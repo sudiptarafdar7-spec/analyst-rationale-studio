@@ -258,7 +258,7 @@ export default function PdfTemplate() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-slate-200">|</span>
                 <label className="text-xs text-slate-400">Purpose</label>
-                <select className="input h-8 w-60 pr-7 text-xs" value={purposeValue(page)} onChange={(e) => { const [k, w] = e.target.value.split(":"); setPagePurpose(safeIdx, k as PageKind, (w || undefined) as PageWhen | undefined); }}>
+                <select className="input h-9 w-60 pr-7 text-xs leading-tight" value={purposeValue(page)} onChange={(e) => { const [k, w] = e.target.value.split(":"); setPagePurpose(safeIdx, k as PageKind, (w || undefined) as PageWhen | undefined); }}>
                   <option value="stock:first">Stock · first stock (header)</option>
                   <option value="stock:rest">Stock · other stocks (no header)</option>
                   <option value="stock:all">Stock · every stock</option>
