@@ -191,7 +191,7 @@ def get_artifact(
     path = os.path.join(pipeline.job_folder(job_id), rel)
     if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="Artifact not available yet.")
-    return FileResponse(path, filename=os.path.basename(path))
+    return FileResponse(path, filename=os.path.basename(path), headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})
 
 
 @router.get("/{job_id}/pdf-url")
@@ -214,7 +214,7 @@ def get_pdf(
     if not job.output_pdf_path or not os.path.isfile(job.output_pdf_path):
         raise HTTPException(status_code=404, detail="PDF not available.")
     return FileResponse(job.output_pdf_path, media_type="application/pdf",
-                        filename=os.path.basename(job.output_pdf_path))
+                        filename=os.path.basename(job.output_pdf_path), headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})
 
 
 @router.post("/{job_id}/reset")

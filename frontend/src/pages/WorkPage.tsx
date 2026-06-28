@@ -576,10 +576,11 @@ function CompletionPanel({ job, saved, signed, onSaved, onDeleted }: { job: JobD
   const pdfPath = signed ? `/review/${job.id}/signed-pdf` : `/jobs/${job.id}/pdf`;
   useEffect(() => {
     let u: string | null = null;
-    api.getBlob(pdfPath).then((b) => { u = URL.createObjectURL(b); setPdfUrl(u); }).catch(() => setPdfUrl(null));
+    api.getBlob(`${pdfPath}?_=${Date.now()}`).then((b) => { u = URL.createObjectURL(b); setPdfUrl(u); }).catch(() => setPdfUrl(null));
     return () => { if (u) URL.revokeObjectURL(u); };
   }, [pdfPath]);
   const send = async () => { setBusy(true); try { await api.post(`/jobs/${job.id}/save`); toast.success("Sent to reviewer"); onSaved(); } catch (e) { toast.error(e instanceof ApiError ? e.message : "Could not send"); } finally { setBusy(false); } };
+  const rebuild = async () => { setBusy(true); try { await api.post(`/jobs/${job.id}/retry-step`, { step_no: 10 }); toast.success("Rebuilding the PDF with the latest template & data…"); onSaved(); } catch (e) { toast.error(e instanceof ApiError ? e.message : "Could not rebuild"); } finally { setBusy(false); } };
   const del = async () => { if (!confirm("Delete this job and its files?")) return; setBusy(true); try { await api.del(`/jobs/${job.id}`); toast.success("Deleted"); onDeleted(); } catch (e) { toast.error(e instanceof ApiError ? e.message : "Delete failed"); } finally { setBusy(false); } };
   const title = signed ? "Signed rationale" : saved ? "Sent for review" : "Rationale complete";
   const subtitle = signed ? "The signed PDF is archived under Signed Rationale." : saved ? "Waiting for a reviewer to sign the PDF." : "The compliance PDF is ready — send it to the reviewer.";
@@ -593,6 +594,7 @@ function CompletionPanel({ job, saved, signed, onSaved, onDeleted }: { job: JobD
         </div>
         <div className="flex flex-wrap gap-2">
           <a className="btn-ghost" href={pdfUrl ?? undefined} download={pdfUrl ? `${job.title || "rationale"}${signed ? "-signed" : ""}.pdf` : undefined}><Download size={16} /> Download</a>
+          {!saved && !signed && <button className="btn-ghost" disabled={busy} onClick={rebuild} title="Re-run step 10 with the latest PDF template"><RotateCcw size={16} /> Rebuild PDF</button>}
           {!saved && !signed && <button className="btn-primary" disabled={busy} onClick={send}><Send size={16} /> Send to reviewer</button>}
           {(saved || signed) && <Link className="btn-ghost" to={`/review/${job.id}`}><TrendingUp size={16} /> Open review</Link>}
           <button className="btn bg-danger text-white hover:bg-danger/90" disabled={busy} onClick={del}><Trash2 size={16} /> Delete</button>
