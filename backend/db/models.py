@@ -455,3 +455,28 @@ class UserActivity(Base):
     created_at: Mapped[dt.datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+# --- 15. notifications ------------------------------------------------------
+class Notification(Base):
+    """A per-user alert: a job needs review, finished (PDF ready), or failed."""
+
+    __tablename__ = "notifications"
+    __table_args__ = (
+        sa.Index("ix_notifications_user_created", "user_id", sa.text("created_at DESC")),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
+    )
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="CASCADE")
+    )
+    kind: Mapped[str] = mapped_column(Text, nullable=False)  # review | completed | failed
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str | None] = mapped_column(Text)
+    read: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.false())
+    created_at: Mapped[dt.datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )

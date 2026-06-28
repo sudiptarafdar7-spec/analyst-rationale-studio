@@ -20,6 +20,7 @@ from api.jobs_pipeline import ws_router
 from api.jobs_review import router as jobs_review_router
 from api.pdf_template import router as pdf_template_router
 from api.platforms import router as platforms_router
+from api.notifications import router as notifications_router
 from api.review import router as review_router
 from api.saved import router as saved_router
 from api.tools import router as tools_router
@@ -148,6 +149,7 @@ app.include_router(jobs_review_router, prefix="/api")
 app.include_router(saved_router, prefix="/api")
 app.include_router(watchlist_router, prefix="/api")
 app.include_router(review_router, prefix="/api")
+app.include_router(notifications_router, prefix="/api")
 app.include_router(ws_router)  # WS /ws/jobs/{id} (no /api prefix)
 
 # Serve uploaded files (avatars, logos, ...) from the upload dir.

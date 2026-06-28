@@ -6,6 +6,7 @@ import { ChevronDown, LogOut, UserCircle } from "lucide-react";
 import { useAuthStore } from "../store/auth";
 import { toast } from "../store/toast";
 import Avatar from "../components/Avatar";
+import NotificationBell from "../components/NotificationBell";
 import { BRAND_ICON, NAV_GROUPS } from "./nav";
 import { hasPerm } from "../lib/perms";
 
@@ -126,7 +127,10 @@ export default function AppShell() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white/80 px-5 backdrop-blur">
           <div className="text-sm font-medium text-slate-400">Analyst Rationale Studio</div>
-          <UserMenu />
+          <div className="flex items-center gap-1.5">
+            <NotificationBell />
+            <UserMenu />
+          </div>
         </header>
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-6xl px-5 py-8">

@@ -330,6 +330,10 @@ def _pause(db, job, gate: GateKind, next_step: int) -> None:
     db.commit()
     jlog(job.id, next_step - 1, "paused_gate", gate=gate.value, next_step=next_step)
     _emit(job.id, {"type": "gate", "gate": gate.value, "next_step": next_step})
+    from services.notifications import notify
+    notify(db, job.created_by, job.id, "review",
+           f"Review needed: {job.title or 'a job'}",
+           f"Paused at step {next_step - 1} for your review.")
 
 
 def run_pipeline(job_id, start_step: int = 1) -> None:
@@ -379,6 +383,10 @@ def run_pipeline(job_id, start_step: int = 1) -> None:
                 db.commit()
                 jlog(job_id, n, "step_failed", level=logging.ERROR, key=STEP_KEYS[n], error=type(exc).__name__)
                 _emit(job_id, {"type": "error", "step_no": n, "message": msg})
+                from services.notifications import notify
+                notify(db, job.created_by, job_id, "failed",
+                       f"Job failed: {job.title or 'a job'}",
+                       f"Failed at step {n} — {STEP_KEYS[n]}.")
                 return
 
             _upsert_step(db, job_id, n, StepStatus.done, log_tail=tee.tail(),
@@ -404,6 +412,10 @@ def run_pipeline(job_id, start_step: int = 1) -> None:
         jlog(job_id, LAST_STEP, "pipeline_completed", pdf=bool(job.output_pdf_path))
         _emit(job_id, {"type": "done", "status": "completed",
                        "pdf_url": f"/api/jobs/{job_id}/pdf" if job.output_pdf_path else None})
+        from services.notifications import notify
+        notify(db, job.created_by, job_id, "completed",
+               f"Rationale ready: {job.title or 'a job'}",
+               "The pipeline finished and the PDF is ready.")
 
 
 def resume(job_id) -> None:
