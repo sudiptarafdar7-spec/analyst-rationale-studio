@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -9,6 +11,8 @@ import base64
 import csv
 import os
 import re
+import shutil
+import tempfile
 
 from core.deps import require_admin
 from core.permissions import require_perm
@@ -132,3 +136,85 @@ def sample_data(
         }
         break
     return out
+
+
+class PreviewIn(BaseModel):
+    design: dict
+    company_name: str | None = None
+    registration_details: str | None = None
+
+
+@router.post("/preview")
+def preview_pdf(
+    body: PreviewIn,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_perm("admin:pdf_template")),
+) -> Response:
+    """Render the supplied design to a real PDF using a recent job's stocks (or a
+    synthetic sample) so the builder shows EXACTLY how the design comes out."""
+    from tools.step10_generate_pdf.runtime import fetch_pdf_config, run
+    from tools.step10_generate_pdf.schema import get_effective_config
+
+    # Find a recent job with generated stocks (for real charts + config), else synthetic.
+    src_job = None
+    for job in db.scalars(
+        select(Job).where(Job.status.in_([JobStatus.completed, JobStatus.saved, JobStatus.signed]))
+        .order_by(Job.created_at.desc()).limit(25)
+    ).all():
+        if os.path.exists(os.path.join(job_folder(job.id), "analysis", "stocks_with_charts.csv")):
+            src_job = job
+            break
+
+    cfg = get_effective_config(None)
+    tmp = tempfile.mkdtemp(prefix="pdfpreview_")
+    try:
+        os.makedirs(os.path.join(tmp, "analysis"), exist_ok=True)
+        # Build the sample CSV (max 3 rows) with ABSOLUTE chart paths so they resolve.
+        if src_job:
+            src_csv = os.path.join(job_folder(src_job.id), "analysis", "stocks_with_charts.csv")
+            with open(src_csv, encoding="utf-8-sig", newline="") as fh:
+                rd = list(csv.DictReader(fh))
+            cols = rd[0].keys() if rd else ["DATE", "LISTED NAME", "STOCK SYMBOL", "CHART PATH", "ANALYSIS"]
+            rows = rd[:3]
+            for r in rows:
+                cp = (r.get("CHART PATH") or "").strip()
+                if cp and not os.path.isabs(cp):
+                    r["CHART PATH"] = os.path.join(job_folder(src_job.id), cp)
+            cfg_override = fetch_pdf_config(src_job.id, cfg)
+        else:
+            cols = ["DATE", "LISTED NAME", "STOCK SYMBOL", "SHORT NAME", "CHART PATH", "ANALYSIS"]
+            rows = [
+                {"DATE": "23-06-2026", "LISTED NAME": "Reliance Industries", "STOCK SYMBOL": "RELIANCE",
+                 "SHORT NAME": "RELIANCE", "CHART PATH": "", "ANALYSIS": "Hold for 2 months, stoploss 1250, target 1475+."},
+                {"DATE": "23-06-2026", "LISTED NAME": "Tata Consultancy", "STOCK SYMBOL": "TCS",
+                 "SHORT NAME": "TCS", "CHART PATH": "", "ANALYSIS": "Buy on dips, target 4200."},
+            ]
+            cfg_override = {
+                "channel_name": "Money9", "channel_logo_path": None, "title": "Rationale Report",
+                "input_date": "2026-06-23", "youtube_url": "youtu.be/preview", "platform": "YouTube",
+                "company_name": "Acme Research Pvt. Ltd.", "registration_details": "SEBI Reg: INH000000000",
+                "disclaimer_text": None, "disclosure_text": None, "design": {},
+                "company_logo_path": None, "font_regular_path": None, "font_bold_path": None, "contacts": [],
+            }
+        with open(os.path.join(tmp, "analysis", "stocks_with_charts.csv"), "w", encoding="utf-8-sig", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=list(cols))
+            w.writeheader()
+            w.writerows(rows)
+
+        cfg_override["design"] = body.design or {}
+        if body.company_name:
+            cfg_override["company_name"] = body.company_name
+        if body.registration_details is not None:
+            cfg_override["registration_details"] = body.registration_details
+        cfg_override["disclaimer_text"] = None
+        cfg_override["disclosure_text"] = None
+
+        res = run(tmp, config_override=cfg_override)
+        pdf_path = res.get("output_file") if isinstance(res, dict) else None
+        if not pdf_path or not os.path.exists(pdf_path):
+            return Response(content=b"", status_code=500)
+        data = open(pdf_path, "rb").read()
+        return Response(content=data, media_type="application/pdf",
+                        headers={"Cache-Control": "no-store"})
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)

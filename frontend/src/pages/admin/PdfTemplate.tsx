@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, Copy, Database, Eye, EyeOff, FileText, Heading,
+  AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, Copy, Database, Download, Eye, EyeOff, FileText, Heading,
   Image as ImageIcon, Italic, Layout, Loader2, Lock, MoveDown, MoveUp, Pilcrow, Plus, RotateCcw, Save, Square,
-  Trash2, Type, Underline, Unlock,
+  Trash2, Type, Underline, Unlock, X,
 } from "lucide-react";
 import { api, ApiError } from "../../lib/api";
 import { toast } from "../../store/toast";
@@ -100,6 +100,8 @@ export default function PdfTemplate() {
   const drag = useRef<{ id: string; mode: "move" | "resize"; sx: number; sy: number; o: El } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const sampleQ = useQuery({ queryKey: ["pdf-sample"], queryFn: () => api.get<SampleData>("/admin/pdf-template/sample") });
   const sample = sampleQ.data;
 
@@ -194,6 +196,15 @@ export default function PdfTemplate() {
     onSuccess: () => { toast.success("PDF template saved"); qc.invalidateQueries({ queryKey: ["pdf-template"] }); },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : "Could not save template"),
   });
+  const runPreview = async () => {
+    setPreviewing(true);
+    try {
+      const blob = await api.postBlob("/admin/pdf-template/preview", { design, company_name: content.company_name, registration_details: content.registration_details });
+      setPreviewUrl((u) => { if (u) URL.revokeObjectURL(u); return URL.createObjectURL(blob); });
+    } catch (e) { toast.error(e instanceof ApiError ? e.message : "Could not render preview"); }
+    finally { setPreviewing(false); }
+  };
+  const closePreview = () => setPreviewUrl((u) => { if (u) URL.revokeObjectURL(u); return null; });
 
   const selMeta = useMemo(() => (sel ? { isText: ["text", "heading", "field", "richtext"].includes(sel.type), isField: sel.type === "field", isImage: sel.type === "image", isBox: sel.type === "box", isRich: sel.type === "richtext" } : null), [sel]);
   const isStockPage = page?.kind !== "fixed";
@@ -225,6 +236,7 @@ export default function PdfTemplate() {
             <button onClick={() => setTab("design")} className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${tab === "design" ? "bg-brand-50 text-brand-700" : "text-slate-500"}`}><Layout size={15} /> Design</button>
             <button onClick={() => setTab("content")} className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${tab === "content" ? "bg-brand-50 text-brand-700" : "text-slate-500"}`}><Type size={15} /> Content</button>
           </div>
+          <button className="btn-ghost" disabled={previewing} onClick={runPreview} title="Render the real PDF with sample data">{previewing ? <Loader2 size={18} className="animate-spin" /> : <Eye size={18} />} Preview</button>
           <button className="btn-primary" disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />} Save</button>
         </div>
       </div>
@@ -469,6 +481,21 @@ export default function PdfTemplate() {
             <div key={k} className="card p-6"><label className="label">{label}</label><p className="mb-2 text-xs text-slate-400">{help}</p><RichTextEditor value={content[k]} onChange={(html) => setContent((s) => ({ ...s, [k]: html }))} /></div>
           ))}
           <p className="px-1 text-xs text-slate-400">Disclaimer, disclosure and any other notices are now designed directly on the <span className="font-medium">Fixed info</span> pages using rich-text elements.</p>
+        </div>
+      )}
+
+      {previewUrl && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-black/60 p-4" onClick={closePreview}>
+          <div className="mx-auto flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
+              <span className="text-sm font-semibold">PDF preview — exactly how it renders (sample data)</span>
+              <div className="flex gap-2">
+                <a className="btn-ghost px-2.5 py-1 text-xs" href={previewUrl} download="pdf-preview.pdf"><Download size={14} /> Download</a>
+                <button className="btn-ghost px-2.5 py-1 text-xs" onClick={closePreview}><X size={14} /> Close</button>
+              </div>
+            </div>
+            <iframe title="PDF preview" src={previewUrl} className="h-full w-full flex-1" />
+          </div>
         </div>
       )}
     </div>

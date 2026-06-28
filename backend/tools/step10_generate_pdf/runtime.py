@@ -141,7 +141,7 @@ def make_round_logo(src_path, diameter_px=360):
         return src_path
 
 
-def run(job_folder, overrides=None):
+def run(job_folder, overrides=None, config_override=None):
     """Generate the professional compliance PDF from stocks_with_charts.csv."""
     print("\n" + "=" * 60)
     print("STEP 10: GENERATE PDF")
@@ -156,7 +156,7 @@ def run(job_folder, overrides=None):
         df = pd.read_csv(stocks_csv, encoding="utf-8-sig")
         print(f"✅ Loaded {len(df)} stocks")
 
-        config = fetch_pdf_config(job_id, cfg)
+        config = config_override if config_override is not None else fetch_pdf_config(job_id, cfg)
         print(f"✅ Platform: {config['channel_name']} | Report: {config['title']}")
         _dbg = config.get("design") or {}
         _path = ("page-builder" if (_dbg.get("stock_pages") or _dbg.get("fixed_pages") or _dbg.get("pages"))

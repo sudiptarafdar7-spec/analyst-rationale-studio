@@ -116,4 +116,15 @@ export const api = {
     if (!res.ok) throw await parseError(res);
     return res.blob();
   },
+  postBlob: async (path: string, body: unknown): Promise<Blob> => {
+    const token = useAuthStore.getState().accessToken;
+    const res = await fetch(`${BASE}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      credentials: "include",
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw await parseError(res);
+    return res.blob();
+  },
 };
