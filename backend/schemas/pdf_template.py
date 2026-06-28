@@ -16,6 +16,8 @@ class PdfTemplateOut(BaseModel):
     disclaimer_text: str | None = None
     disclosure_text: str | None = None
     company_data: str | None = None
+    design: dict | None = None
+    design: dict | None = None
     created_at: dt.datetime
     updated_at: dt.datetime
 
@@ -26,3 +28,4 @@ class PdfTemplateUpsert(BaseModel):
     disclaimer_text: str | None = None
     disclosure_text: str | None = None
     company_data: str | None = None
+    design: dict | None = None

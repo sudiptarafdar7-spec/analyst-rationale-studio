@@ -225,6 +225,7 @@ class PdfTemplate(Base, TimestampMixin):
     disclaimer_text: Mapped[str | None] = mapped_column(Text)
     disclosure_text: Mapped[str | None] = mapped_column(Text)
     company_data: Mapped[str | None] = mapped_column(Text)
+    design: Mapped[dict | None] = mapped_column(JSONB)
 
 
 # --- 8. analysts ------------------------------------------------------------

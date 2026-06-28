@@ -42,6 +42,7 @@ def upsert_template(
     row.disclaimer_text = body.disclaimer_text
     row.disclosure_text = body.disclosure_text
     row.company_data = body.company_data
+    row.design = body.design
     db.commit()
     db.refresh(row)
     return PdfTemplateOut.model_validate(row)

@@ -77,10 +77,12 @@ def fetch_pdf_config(job_id, cfg: dict) -> dict:
             disclaimer_text = tpl.disclaimer_text
             disclosure_text = tpl.disclosure_text
             company_data = tpl.company_data
+            design_cfg = tpl.design or {}
         else:
             company_name = cfg["fallback_company_name"]
             registration_details = cfg["fallback_registration"]
             disclaimer_text = disclosure_text = company_data = None
+            design_cfg = {}
 
         company_logo_path = font_regular_path = font_bold_path = None
         from db.enums import UploadedFileType
@@ -123,6 +125,7 @@ def fetch_pdf_config(job_id, cfg: dict) -> dict:
         "company_name": company_name,
         "registration_details": registration_details,
         "disclaimer_text": disclaimer_text,
+        "design": design_cfg,
         "disclosure_text": disclosure_text,
         "company_logo_path": company_logo_path,
         "font_regular_path": font_regular_path,
@@ -188,7 +191,27 @@ def run(job_folder, overrides=None):
         else:
             BASE_BLD = "Helvetica-Bold"
 
-        BLUE = colors.HexColor(cfg.get("theme_color", "#6C4CF1"))
+        DESIGN = config.get("design") or {}
+        _ELS = DESIGN.get("elements") or {}
+
+        def _el(key):
+            return _ELS.get(key) or {}
+
+        def _hexc(v, default):
+            try:
+                return colors.HexColor(v) if v else colors.HexColor(default)
+            except Exception:
+                return colors.HexColor(default)
+
+        _ALIGN = {"left": TA_LEFT, "center": TA_CENTER, "right": TA_RIGHT, "justify": TA_JUSTIFY}
+
+        def _num(v, default):
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return float(default)
+
+        BLUE = _hexc(DESIGN.get("theme_color"), cfg.get("theme_color", "#6C4CF1"))
         PAGE_W, PAGE_H = A4
         M_L, M_R, M_T, M_B = 44, 44, 96, 52
         styles = getSampleStyleSheet()
@@ -197,12 +220,21 @@ def run(job_folder, overrides=None):
             kw.setdefault("fontName", BASE_REG)
             return ParagraphStyle(name, parent=styles["Normal"], **kw)
 
-        subheading_style = PS("subheading", fontSize=16, leading=20, textColor=colors.black,
-                              spaceAfter=10, spaceBefore=6, alignment=TA_LEFT, fontName=BASE_BLD)
+        _t = _el("title")
+        subheading_style = PS("subheading", fontSize=_num(_t.get("size"), 16), leading=_num(_t.get("size"), 16) + 4,
+                              textColor=_hexc(_t.get("color"), "#000000"),
+                              spaceAfter=10, spaceBefore=6, alignment=_ALIGN.get(_t.get("align"), TA_LEFT),
+                              fontName=BASE_REG if _t.get("weight") == "normal" else BASE_BLD)
         small_grey = PS("small_grey", fontSize=9.2, leading=12, textColor=colors.HexColor("#666666"))
-        body_style = PS("body_style", fontSize=10.8, leading=15.6, spaceAfter=10, alignment=TA_JUSTIFY)
-        label_style = PS("label_style", fontSize=11, leading=14.5, spaceAfter=4, alignment=TA_LEFT,
-                         textColor=BLUE, fontName=BASE_BLD)
+        _b = _el("overview_text")
+        body_style = PS("body_style", fontSize=_num(_b.get("size"), 10.8), leading=_num(_b.get("size"), 10.8) * 1.44,
+                        spaceAfter=10, alignment=_ALIGN.get(_b.get("align"), TA_JUSTIFY),
+                        textColor=_hexc(_b.get("color"), "#000000"))
+        _ov = _el("overview_label")
+        _ov_color = _hexc(_ov.get("color"), None) if _ov.get("color") else BLUE
+        _ov_text = _ov.get("text") or "OUR GENERAL VIEW"
+        label_style = PS("label_style", fontSize=_num(_ov.get("size"), 11), leading=14.5, spaceAfter=4, alignment=TA_LEFT,
+                         textColor=_ov_color, fontName=BASE_BLD)
         date_bold = PS("date_bold", fontSize=11, leading=13.5, alignment=TA_RIGHT,
                        textColor=colors.black, fontName=BASE_BLD)
         indented_body = PS("indented_body", fontSize=10.8, leading=15.6, spaceAfter=10,
@@ -249,8 +281,9 @@ def run(job_folder, overrides=None):
             header_h = 72
             c.setFillColor(BLUE)
             c.rect(0, PAGE_H - header_h, PAGE_W, header_h, fill=1, stroke=0)
-            c.setFillColor(colors.white)
-            c.setFont(BASE_BLD, 13.5)
+            _cn = _el("company_name")
+            c.setFillColor(_hexc(_cn.get("color"), "#FFFFFF"))
+            c.setFont(BASE_BLD, _num(_cn.get("size"), 13.5))
             c.drawString(40, PAGE_H - 30, config["company_name"])
             c.setFont(BASE_REG, 7.5)
             reg_text = config["registration_details"] or ""
@@ -293,7 +326,8 @@ def run(job_folder, overrides=None):
         def draw_footer(c):
             c.setFont(BASE_REG, 8.5)
             c.setFillColor(colors.black)
-            c.drawCentredString(PAGE_W / 2.0, 16, f"Page {c.getPageNumber()}")
+            if _el("footer_pageno").get("visible", True):
+                c.drawCentredString(PAGE_W / 2.0, 16, f"Page {c.getPageNumber()}")
             left_x, baseline_y, logo_sz = M_L, 34, 24
             cur_x = left_x
             if ROUND_LOGO and os.path.exists(ROUND_LOGO):
@@ -311,12 +345,14 @@ def run(job_folder, overrides=None):
                 cur_x += logo_sz + 8
             c.setFillColor(BLUE)
             c.setFont(BASE_BLD, 9)
-            c.drawString(cur_x, baseline_y + 5, config["channel_name"])
+            if _el("footer_channel").get("visible", True):
+                c.drawString(cur_x, baseline_y + 5, config["channel_name"])
             c.setFont(BASE_REG, 8)
             c.setFillColor(colors.HexColor("#666666"))
-            c.drawString(cur_x, baseline_y - 7, config.get("platform", "Youtube"))
+            if _el("footer_platform").get("visible", True):
+                c.drawString(cur_x, baseline_y - 7, config.get("platform", "Youtube"))
             youtube_url = config.get("youtube_url", "")
-            if youtube_url:
+            if youtube_url and _el("footer_url").get("visible", True):
                 c.setFont(BASE_REG, 7)
                 c.setFillColor(colors.HexColor("#444444"))
                 display_url = youtube_url
@@ -363,9 +399,22 @@ def run(job_folder, overrides=None):
             return tbl
 
         def full_width_chart(path):
-            max_w = PAGE_W - M_L - M_R
+            avail = PAGE_W - M_L - M_R
+            _ch = _el("chart")
+            frac = min(max(_num(_ch.get("w"), 100) / 100.0, 0.3), 1.0)
+            max_w = avail * frac
             h = max(3.2 * inch, min(max_w * 9 / 16, 4.8 * inch))
-            return Image(path, width=max_w, height=h)
+            img = Image(path, width=max_w, height=h)
+            bw = _num(_ch.get("borderW"), 0)
+            if bw > 0:
+                t = Table([[img]], colWidths=[max_w])
+                t.setStyle(TableStyle([
+                    ("BOX", (0, 0), (-1, -1), bw, _hexc(_ch.get("borderColor"), "#000000")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ]))
+                return t
+            return img
 
         print(f"📝 Generating {len(df)} stock pages...")
         for idx, row in df.iterrows():
@@ -398,7 +447,7 @@ def run(job_folder, overrides=None):
             story.append(heading("Rationale"))
             story.append(Spacer(1, 10))
             analysis_text = str(row.get("ANALYSIS", "") or "—").strip()
-            story.append(Paragraph("<b>OUR GENERAL VIEW</b>", label_style))
+            story.append(Paragraph(f"<b>{_ov_text}</b>", label_style))
             story.append(Spacer(1, 4))
             story.append(Paragraph(analysis_text, body_style))
             story.append(PageBreak())
@@ -420,6 +469,14 @@ def run(job_folder, overrides=None):
             for fl in create_html_flowables(config["disclosure_text"], indented_body):
                 story.append(fl)
             story.append(Spacer(1, 35))
+
+        _sg = _el("sign_area")
+        if _sg.get("visible"):
+            story.append(heading(_sg.get("text") or "Authorised Signatory"))
+            story.append(Spacer(1, 46))
+            _sig_line = PS("sig_line", fontSize=10, leading=14, textColor=colors.HexColor("#444444"))
+            story.append(Paragraph("_______________________________", _sig_line))
+            story.append(Paragraph(_sg.get("subtext") or "Signature &amp; Date", _sig_line))
 
         contact_card_heading = PS("contact_card_heading", fontSize=10, leading=13,
                                   textColor=BLUE, fontName=BASE_BLD, spaceAfter=4)

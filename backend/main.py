@@ -94,6 +94,8 @@ def _ensure_db_schema() -> None:
             conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS signed_at timestamptz"))
             conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS signed_by uuid"))
             conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS raw_cleaned boolean NOT NULL DEFAULT false"))
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE pdf_template ADD COLUMN IF NOT EXISTS design jsonb"))
 
         Base.metadata.create_all(bind=engine)  # creates only missing tables
 
