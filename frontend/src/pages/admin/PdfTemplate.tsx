@@ -294,7 +294,11 @@ export default function PdfTemplate() {
                       <div><label className="label">Dynamic field</label>
                         <select className="input h-9" value={sel.field ?? ""} onChange={(e) => patchEl(sel.id, { field: e.target.value })}>
                           {fieldOpts.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
-                        </select></div>
+                        </select>
+                        {["analysis", "disclaimer", "disclosure"].includes(sel.field ?? "") && (
+                          <p className="mt-1 text-[11px] text-emerald-600">Rich text — overflow auto-continues onto new pages.</p>
+                        )}
+                      </div>
                     )}
                     {selMeta.isImage && (
                       <div><label className="label">Image source</label>

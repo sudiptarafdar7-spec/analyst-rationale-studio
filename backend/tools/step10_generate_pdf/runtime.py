@@ -378,6 +378,7 @@ def run(job_folder, overrides=None):
         if DESIGN.get("stock_pages") or DESIGN.get("fixed_pages"):
             import xml.sax.saxutils as _sx
             theme_hex = DESIGN.get("theme_color") or cfg.get("theme_color", "#6C4CF1")
+            FLOW_FIELDS = {"analysis", "disclaimer", "disclosure"}
 
             def _esc(t):
                 return _sx.escape(str(t if t is not None else ""))
@@ -395,12 +396,15 @@ def run(job_folder, overrides=None):
                 y_top = _num(el.get("y"), 0) / 100.0 * PAGE_H
                 return x, PAGE_H - y_top - h, w, h
 
-            def _frame(c, x, y, w, h, flowables, pad=2):
+            def _frame_remainder(c, x, y, w, h, flowables, pad=2):
+                """Draw flowables into the box; return whatever did not fit."""
+                rem = list(flowables)
                 try:
                     Frame(x, y, w, h, leftPadding=pad, rightPadding=pad, topPadding=pad,
-                          bottomPadding=pad, showBoundary=0).addFromList(list(flowables), c)
+                          bottomPadding=pad, showBoundary=0).addFromList(rem, c)
                 except Exception as _e:
-                    print(f"  (skip overflow element: {_e})")
+                    print(f"  (element draw issue: {_e})")
+                return rem
 
             def _field_text(key, row):
                 rv = (lambda col: str(row.get(col, "") or "").strip() if row is not None else "")
@@ -430,12 +434,12 @@ def run(job_folder, overrides=None):
                 return None
 
             def _draw_el(c, el, row, pageno):
+                """Draw one element. Returns leftover flowables for overflow fields, else None."""
                 if el.get("visible", True) is False:
-                    return
+                    return None
                 typ = el.get("type", "text")
                 x, y, w, h = _box(el)
                 pad = max(0.0, _num(el.get("pad"), 2))
-                # background / border for any element
                 if el.get("bg"):
                     c.setFillColor(_hexc(el.get("bg"), "#ffffff"))
                     c.rect(x, y, w, h, fill=1, stroke=0)
@@ -451,21 +455,22 @@ def run(job_folder, overrides=None):
                         c.setStrokeColor(_hexc(el.get("borderColor"), "#cccccc"))
                         c.setLineWidth(bw)
                         c.rect(x, y, w, h, fill=0, stroke=1)
-                    return
+                    return None
                 bw = _num(el.get("borderW"), 0)
                 if bw > 0:
                     c.setStrokeColor(_hexc(el.get("borderColor"), "#cccccc"))
                     c.setLineWidth(bw)
                     c.rect(x, y, w, h, fill=0, stroke=1)
                 if typ == "box":
-                    return
-                # text / heading / field
+                    return None
                 key = el.get("field")
+                # rich disclaimer / disclosure: render the HTML, flow overflow
                 if typ == "field" and key in ("disclaimer", "disclosure"):
                     html = config.get(f"{key}_text")
-                    if html:
-                        _frame(c, x, y, w, h, create_html_flowables(html, indented_body), pad=pad)
-                    return
+                    if not html:
+                        return None
+                    rem = _frame_remainder(c, x, y, w, h, create_html_flowables(html, indented_body), pad=pad)
+                    return rem or None
                 if typ == "field" and key == "page_no":
                     text = f"Page {pageno}"
                 elif typ == "field":
@@ -473,21 +478,45 @@ def run(job_folder, overrides=None):
                 else:
                     text = el.get("text", "")
                 if not str(text).strip():
-                    return
+                    return None
                 dsize = 17 if typ == "heading" else 10.8
                 sz = _num(el.get("size"), dsize)
                 style = PS("pg_" + os.urandom(4).hex(), fontSize=sz, leading=sz * 1.32,
                            textColor=_hexc(el.get("color"), "#111111"),
                            alignment=_ALIGN.get(el.get("align"), TA_LEFT),
                            fontName=BASE_BLD if el.get("weight", "bold" if typ == "heading" else "normal") == "bold" else BASE_REG)
-                _frame(c, x, y, w, h, [Paragraph(_esc(text), style)], pad=pad)
+                rem = _frame_remainder(c, x, y, w, h, [Paragraph(_esc(text), style)], pad=pad)
+                # Only long fields flow onto continuation pages; everything else clips.
+                if typ == "field" and key in FLOW_FIELDS:
+                    return rem or None
+                return None
 
             def _draw_page(c, pg, row, pageno):
                 if pg.get("bg"):
                     c.setFillColor(_hexc(pg.get("bg"), "#ffffff"))
                     c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
+                overflow = []
                 for el in pg.get("elements", []):
-                    _draw_el(c, el, row, pageno)
+                    rem = _draw_el(c, el, row, pageno)
+                    if rem:
+                        overflow.append(rem)
+                return overflow
+
+            def _continue(c, remaining):
+                """Word-style overflow: keep adding full pages until the content is drawn."""
+                MGN = 42
+                guard = 0
+                while remaining and guard < 60:
+                    fid, flen = id(remaining[0]), len(remaining)
+                    c.showPage()
+                    try:
+                        Frame(MGN, MGN, PAGE_W - 2 * MGN, PAGE_H - 2 * MGN, leftPadding=2,
+                              rightPadding=2, topPadding=4, bottomPadding=4, showBoundary=0).addFromList(remaining, c)
+                    except Exception:
+                        pass
+                    guard += 1
+                    if remaining and id(remaining[0]) == fid and len(remaining) == flen:
+                        remaining.pop(0)  # un-splittable item; drop to avoid an infinite loop
 
             c = pdfcanvas.Canvas(output_pdf, pagesize=A4)
             stock_pages = DESIGN.get("stock_pages") or []
@@ -496,11 +525,15 @@ def run(job_folder, overrides=None):
             for _, row in df.iterrows():
                 for pg in stock_pages:
                     pageno += 1
-                    _draw_page(c, pg, row, pageno)
+                    overflow = _draw_page(c, pg, row, pageno)
+                    for rem in overflow:
+                        _continue(c, rem)
                     c.showPage()
             for pg in fixed_pages:
                 pageno += 1
-                _draw_page(c, pg, None, pageno)
+                overflow = _draw_page(c, pg, None, pageno)
+                for rem in overflow:
+                    _continue(c, rem)
                 c.showPage()
             if pageno == 0:
                 c.showPage()
