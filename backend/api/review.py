@@ -31,6 +31,7 @@ router = APIRouter(prefix="/review", tags=["review"])
 
 class SignedFacets(BaseModel):
     platforms: list[dict] = []
+    channels: list[dict] = []
     analysts: list[dict] = []
     years: list[int] = []
 
@@ -58,6 +59,7 @@ def list_signed(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     platform_type: str | None = Query(None),
+    channel_id: uuid.UUID | None = Query(None),
     analyst_id: uuid.UUID | None = Query(None),
     year: int | None = Query(None),
     month: int | None = Query(None),
@@ -89,6 +91,10 @@ def list_signed(
             _t = _p.platform_type.value
             _types_present[_t] = _types_present.get(_t, 0) + 1
     facet_platforms = [{"value": t, "label": _PLABEL.get(t, t.title())} for t in _types_present]
+    facet_channels = [
+        {"id": str(p.id), "name": p.channel_name, "platform_type": p.platform_type.value}
+        for p in plats.values()
+    ]
     facet_analysts = [{"id": str(a.id), "name": a.name} for a in analysts.values()]
     facet_years = sorted({_date(j).year for j in jobs if _date(j)}, reverse=True)
 
@@ -97,6 +103,8 @@ def list_signed(
         d = _date(j)
         jp = plats.get(j.platform_id)
         if platform_type and (jp is None or jp.platform_type.value != platform_type):
+            return False
+        if channel_id and j.platform_id != channel_id:
             return False
         if analyst_id and analyst_id not in job_analyst_ids.get(j.id, set()):
             return False
@@ -117,7 +125,7 @@ def list_signed(
     return SignedListOut(
         items=[_to_list_item(db, j) for j in filtered],
         total=len(filtered),
-        facets=SignedFacets(platforms=facet_platforms, analysts=facet_analysts, years=facet_years),
+        facets=SignedFacets(platforms=facet_platforms, channels=facet_channels, analysts=facet_analysts, years=facet_years),
     )
 
 
