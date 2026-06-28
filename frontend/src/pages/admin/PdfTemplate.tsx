@@ -19,8 +19,10 @@ interface El {
   html?: string; font?: "sans" | "serif" | "mono"; italic?: boolean; underline?: boolean; lh?: number; opacity?: number; locked?: boolean;
   padT?: number; padR?: number; padB?: number; padL?: number; bT?: number; bR?: number; bB?: number; bL?: number; shadow?: boolean; widthMode?: "custom" | "full" | "inline"; imgW?: number; imgH?: number;
 }
-interface Page { id: string; bg?: string; elements: El[] }
-interface Design { theme_color: string; stock_pages: Page[]; fixed_pages: Page[] }
+type PageKind = "stock" | "fixed";
+type PageWhen = "first" | "rest" | "all";
+interface Page { id: string; kind: PageKind; when?: PageWhen; bg?: string; elements: El[] }
+interface Design { theme_color: string; pages: Page[] }
 interface SampleData { company_name: string; registration: string; disclaimer: string; disclosure: string; channel: string; platform: string; url: string; stock: { stock_name: string; stock_symbol: string; short_name: string; date: string; analysis: string; chart: string | null } | null }
 
 // Dynamic fields from the pipeline / template.
@@ -47,13 +49,13 @@ const IMAGE_FIELDS = [
 const fieldSample = (k?: string) => TEXT_FIELDS.find((f) => f.key === k)?.sample ?? `{${k ?? "field"}}`;
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-function blankPage(): Page { return { id: uid(), elements: [] }; }
+function blankPage(kind: PageKind = "stock"): Page { return { id: uid(), kind, when: kind === "stock" ? "all" : undefined, elements: [] }; }
 function defaultDesign(): Design {
   const f = (type: ElType, x: number, y: number, w: number, h: number, extra: Partial<El>): El => ({ id: uid(), type, x, y, w, h, visible: true, ...extra });
   return {
     theme_color: "#6C4CF1",
-    stock_pages: [{
-      id: uid(), elements: [
+    pages: [
+      { id: uid(), kind: "stock", when: "first", elements: [
         f("box", 0, 0, 100, 9, { bg: "#6C4CF1" }),
         f("field", 4, 2, 55, 4, { field: "company_name", color: "#ffffff", size: 13.5, weight: "bold" }),
         f("field", 4, 6, 70, 2.5, { field: "registration", color: "#ffffff", size: 7.5 }),
@@ -61,26 +63,30 @@ function defaultDesign(): Design {
         f("field", 60, 12, 36, 4, { field: "date", color: "#111111", size: 11, weight: "bold", align: "right" }),
         f("field", 4, 18, 70, 5, { field: "stock_name", color: "#111111", size: 16, weight: "bold" }),
         f("field", 4, 23, 40, 4, { field: "stock_symbol", color: "#666666", size: 11 }),
-        f("image", 4, 28, 92, 28, { field: "chart", borderW: 0, borderColor: "#cccccc" }),
+        f("image", 4, 28, 92, 28, { field: "chart" }),
         f("heading", 4, 58, 50, 4, { text: "OUR GENERAL VIEW", color: "#6C4CF1", size: 11, weight: "bold" }),
         f("field", 4, 63, 92, 20, { field: "analysis", color: "#222222", size: 10.8, align: "justify" }),
         f("field", 8, 94, 30, 3, { field: "channel", color: "#6C4CF1", size: 9, weight: "bold" }),
         f("field", 44, 95, 12, 3, { field: "page_no", color: "#111111", size: 8.5, align: "center" }),
-        f("field", 64, 95, 32, 3, { field: "url", color: "#444444", size: 7, align: "right" }),
-      ],
-    }],
-    fixed_pages: [{
-      id: uid(), elements: [
+      ] },
+      { id: uid(), kind: "stock", when: "rest", elements: [
+        f("field", 4, 8, 70, 5, { field: "stock_name", color: "#111111", size: 16, weight: "bold" }),
+        f("field", 4, 13, 40, 4, { field: "stock_symbol", color: "#666666", size: 11 }),
+        f("image", 4, 20, 92, 32, { field: "chart" }),
+        f("heading", 4, 55, 50, 4, { text: "OUR GENERAL VIEW", color: "#6C4CF1", size: 11, weight: "bold" }),
+        f("field", 4, 60, 92, 24, { field: "analysis", color: "#222222", size: 10.8, align: "justify" }),
+        f("field", 44, 95, 12, 3, { field: "page_no", color: "#111111", size: 8.5, align: "center" }),
+      ] },
+      { id: uid(), kind: "fixed", elements: [
         f("heading", 4, 6, 60, 4, { text: "Disclaimer", color: "#6C4CF1", size: 16, weight: "bold" }),
         f("field", 4, 12, 92, 30, { field: "disclaimer", color: "#333333", size: 9.5, align: "justify" }),
         f("heading", 4, 46, 60, 4, { text: "Disclosure", color: "#6C4CF1", size: 16, weight: "bold" }),
         f("field", 4, 52, 92, 24, { field: "disclosure", color: "#333333", size: 9.5, align: "justify" }),
         f("heading", 60, 82, 36, 4, { text: "Authorised Signatory", color: "#444444", size: 11, weight: "bold" }),
-      ],
-    }],
+      ] },
+    ],
   };
 }
-
 const PAGE_W = 520, PAGE_H = Math.round(520 * 1.4142), PT = 520 / 595;
 const ALIGN_ICON: Record<Align, typeof AlignLeft> = { left: AlignLeft, center: AlignCenter, right: AlignRight, justify: AlignJustify };
 const TYPE_ICON: Record<ElType, typeof Type> = { text: Type, heading: Heading, richtext: Pilcrow, field: Database, image: ImageIcon, box: Square };
@@ -91,7 +97,6 @@ export default function PdfTemplate() {
   const { data, isLoading } = useQuery({ queryKey: ["pdf-template"], queryFn: () => api.get<Record<string, unknown> | null>("/admin/pdf-template") });
 
   const [tab, setTab] = useState<"design" | "content">("design");
-  const [section, setSection] = useState<"stock" | "fixed">("stock");
   const [pageIdx, setPageIdx] = useState(0);
   const [design, setDesign] = useState<Design>(defaultDesign);
   const [selId, setSelId] = useState<string | null>(null);
@@ -109,23 +114,27 @@ export default function PdfTemplate() {
       disclaimer_text: (data.disclaimer_text as string) ?? "", disclosure_text: (data.disclosure_text as string) ?? "",
       company_data: (data.company_data as string) ?? "",
     });
-    const d = data.design as Partial<Design> | null;
-    if (d && (d.stock_pages || d.fixed_pages)) {
-      const base = defaultDesign();
-      setDesign({ theme_color: d.theme_color || base.theme_color, stock_pages: d.stock_pages?.length ? d.stock_pages : base.stock_pages, fixed_pages: d.fixed_pages?.length ? d.fixed_pages : base.fixed_pages });
+    const d = data.design as (Partial<Design> & { stock_pages?: Page[]; fixed_pages?: Page[] }) | null;
+    if (d?.pages?.length) {
+      setDesign({ theme_color: d.theme_color || defaultDesign().theme_color, pages: d.pages });
+    } else if (d && (d.stock_pages?.length || d.fixed_pages?.length)) {
+      const pages: Page[] = [
+        ...(d.stock_pages ?? []).map((p) => ({ ...p, kind: "stock" as PageKind, when: "all" as PageWhen })),
+        ...(d.fixed_pages ?? []).map((p) => ({ ...p, kind: "fixed" as PageKind })),
+      ];
+      setDesign({ theme_color: d.theme_color || defaultDesign().theme_color, pages });
     } else if (d?.theme_color) {
       setDesign((cur) => ({ ...cur, theme_color: d.theme_color! }));
     }
   }, [data]);
 
-  const pages = section === "stock" ? design.stock_pages : design.fixed_pages;
+  const pages = design.pages;
   const safeIdx = Math.min(pageIdx, Math.max(0, pages.length - 1));
   const page: Page | undefined = pages[safeIdx];
   const pageRef = useRef<Page | undefined>(page); pageRef.current = page;
   const sel = page?.elements.find((e) => e.id === selId) ?? null;
 
-  const setPages = (fn: (p: Page[]) => Page[]) =>
-    setDesign((d) => (section === "stock" ? { ...d, stock_pages: fn(d.stock_pages) } : { ...d, fixed_pages: fn(d.fixed_pages) }));
+  const setPages = (fn: (p: Page[]) => Page[]) => setDesign((d) => ({ ...d, pages: fn(d.pages) }));
   const patchEl = (id: string, patch: Partial<El>) =>
     setPages((ps) => ps.map((p, i) => (i === safeIdx ? { ...p, elements: p.elements.map((e) => (e.id === id ? { ...e, ...patch } : e)) } : p)));
   const delEl = (id: string) => { setPages((ps) => ps.map((p, i) => (i === safeIdx ? { ...p, elements: p.elements.filter((e) => e.id !== id) } : p))); setSelId(null); };
@@ -136,16 +145,18 @@ export default function PdfTemplate() {
     const base: El = { id: uid(), type, x: 30, y: 42, w: 40, h: 6, visible: true, color: "#111111", align: "left", font: "sans", opacity: 1,
       size: type === "heading" ? 16 : 11, weight: type === "heading" ? "bold" : "normal", pad: type === "box" || type === "image" ? 0 : 2 };
     if (type === "richtext") { base.html = "<p>Edit this <strong>rich</strong> text…</p>"; base.w = 60; base.h = 18; base.align = "left"; }
-    if (type === "field") base.field = section === "stock" ? "stock_name" : "company_name";
-    if (type === "image") { base.field = section === "stock" ? "chart" : "logo"; base.h = 24; }
+    if (type === "field") base.field = page?.kind !== "fixed" ? "stock_name" : "company_name";
+    if (type === "image") { base.field = page?.kind !== "fixed" ? "chart" : "logo"; base.h = 24; }
     if (type === "box") { base.bg = design.theme_color; base.color = undefined; }
     if (type === "heading") base.text = "Heading";
     if (type === "text") base.text = "Text";
     setPages((ps) => ps.map((p, i) => (i === safeIdx ? { ...p, elements: [...p.elements, base] } : p)));
     setSelId(base.id);
   };
-  const addPage = () => { setPages((ps) => [...ps, blankPage()]); setPageIdx(pages.length); setSelId(null); };
-  const delPage = (i: number) => { setPages((ps) => ps.filter((_, k) => k !== i)); setPageIdx(0); setSelId(null); };
+  const addPage = (kind: PageKind = "stock") => { setPages((ps) => [...ps, blankPage(kind)]); setPageIdx(design.pages.length); setSelId(null); };
+  const dupPage = (i: number) => { setPages((ps) => { const src = ps[i]; const copy: Page = { ...src, id: uid(), elements: src.elements.map((e) => ({ ...e, id: uid() })) }; const a = [...ps]; a.splice(i + 1, 0, copy); return a; }); setPageIdx(i + 1); setSelId(null); };
+  const delPage = (i: number) => { setPages((ps) => (ps.length > 1 ? ps.filter((_, k) => k !== i) : ps)); setPageIdx(0); setSelId(null); };
+  const setPagePurpose = (i: number, kind: PageKind, when?: PageWhen) => setPages((ps) => ps.map((p, k) => (k === i ? { ...p, kind, when: kind === "stock" ? (when ?? p.when ?? "all") : undefined } : p)));
 
   useEffect(() => {
     const move = (e: PointerEvent) => {
@@ -167,7 +178,7 @@ export default function PdfTemplate() {
     const up = () => { drag.current = null; setGuides({ v: [], h: [] }); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
     return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-  }, [safeIdx, section]);
+  }, [safeIdx]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -182,7 +193,7 @@ export default function PdfTemplate() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selId, section, safeIdx]);
+  }, [selId, safeIdx]);
 
   const save = useMutation({
     mutationFn: () => api.put("/admin/pdf-template", { ...content, design }),
@@ -191,8 +202,11 @@ export default function PdfTemplate() {
   });
 
   const selMeta = useMemo(() => (sel ? { isText: ["text", "heading", "field", "richtext"].includes(sel.type), isField: sel.type === "field", isImage: sel.type === "image", isBox: sel.type === "box", isRich: sel.type === "richtext" } : null), [sel]);
-  const fieldOpts = section === "stock" ? TEXT_FIELDS : TEXT_FIELDS.filter((f) => !f.stockOnly);
-  const imgOpts = section === "stock" ? IMAGE_FIELDS : IMAGE_FIELDS.filter((f) => !f.stockOnly);
+  const isStockPage = page?.kind !== "fixed";
+  const fieldOpts = isStockPage ? TEXT_FIELDS : TEXT_FIELDS.filter((f) => !f.stockOnly);
+  const imgOpts = isStockPage ? IMAGE_FIELDS : IMAGE_FIELDS.filter((f) => !f.stockOnly);
+  const pageLabel = (p: Page) => (p.kind === "fixed" ? "Fixed" : p.when === "first" ? "Stock·1st" : p.when === "rest" ? "Stock·rest" : "Stock·all");
+  const purposeValue = (p: Page) => (p.kind === "fixed" ? "fixed:" : `stock:${p.when ?? "all"}`);
   const stripTags = (t: string) => t.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   const previewText = (el: El): string => {
     if (el.type !== "field") return el.text ?? "";
@@ -211,7 +225,7 @@ export default function PdfTemplate() {
           <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-50 text-brand-700"><FileText size={20} /></span>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">PDF Template Builder</h1>
-            <p className="text-sm text-slate-500">Design the repeating stock pages and the fixed info pages. Drop dynamic fields from the pipeline anywhere.</p>
+            <p className="text-sm text-slate-500">Add pages, assign each a purpose (first stock / other stocks / fixed info), and drop dynamic pipeline fields anywhere.</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -225,24 +239,32 @@ export default function PdfTemplate() {
 
       {isLoading ? <div className="grid h-64 place-items-center"><Loader2 className="animate-spin text-slate-300" /></div> : tab === "design" ? (
         <>
-          {/* Section + page tabs */}
+          {/* Pages (one ordered list; each page is assigned a purpose) */}
           <div className="card flex flex-wrap items-center gap-3 p-3">
-            <div className="flex rounded-xl border border-slate-200 p-0.5">
-              {([["stock", "Stock pages"], ["fixed", "Fixed info pages"]] as const).map(([s, l]) => (
-                <button key={s} onClick={() => { setSection(s); setPageIdx(0); setSelId(null); }} className={`rounded-lg px-3 py-1.5 text-sm font-medium ${section === s ? "bg-brand-50 text-brand-700" : "text-slate-500"}`}>{l}</button>
-              ))}
-            </div>
-            <span className="text-slate-200">|</span>
             <div className="flex flex-wrap items-center gap-1.5">
               {pages.map((p, i) => (
-                <span key={p.id} className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs ${i === safeIdx ? "border-brand bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500"}`}>
-                  <button onClick={() => { setPageIdx(i); setSelId(null); }}>Page {i + 1}</button>
-                  {pages.length > 1 && <button onClick={() => delPage(i)} className="text-slate-300 hover:text-danger"><Trash2 size={11} /></button>}
-                </span>
+                <button key={p.id} onClick={() => { setPageIdx(i); setSelId(null); }}
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs ${i === safeIdx ? "border-brand bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500"}`}>
+                  <span className="font-semibold">{i + 1}</span> {pageLabel(p)}
+                </button>
               ))}
-              <button onClick={addPage} className="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-2 py-1 text-xs text-slate-500 hover:border-brand hover:text-brand"><Plus size={12} /> Page</button>
+              <button onClick={() => addPage("stock")} className="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-2 py-1 text-xs text-slate-500 hover:border-brand hover:text-brand"><Plus size={12} /> Page</button>
             </div>
-            <span className="ml-auto text-xs text-slate-400">{section === "stock" ? "Repeated for every stock" : "Rendered once, after the stock pages"}</span>
+            {page && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-slate-200">|</span>
+                <label className="text-xs text-slate-400">Purpose</label>
+                <select className="input h-8 w-52 text-xs" value={purposeValue(page)} onChange={(e) => { const [k, w] = e.target.value.split(":"); setPagePurpose(safeIdx, k as PageKind, (w || undefined) as PageWhen | undefined); }}>
+                  <option value="stock:first">Stock — first stock (with header)</option>
+                  <option value="stock:rest">Stock — other stocks (no header)</option>
+                  <option value="stock:all">Stock — every stock</option>
+                  <option value="fixed:">Fixed info — after the stocks</option>
+                </select>
+                <button onClick={() => dupPage(safeIdx)} title="Duplicate this page" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:border-brand hover:text-brand"><Copy size={12} /> Duplicate</button>
+                {pages.length > 1 && <button onClick={() => delPage(safeIdx)} title="Delete page" className="grid h-7 w-7 place-items-center rounded-lg border border-slate-200 text-slate-400 hover:border-danger hover:text-danger"><Trash2 size={12} /></button>}
+              </div>
+            )}
+            <span className="ml-auto text-xs text-slate-400">{page?.kind === "fixed" ? "Rendered once, after all stocks" : page?.when === "first" ? "Used for the FIRST stock only" : page?.when === "rest" ? "Used for stocks 2, 3, …" : "Used for EVERY stock"}</span>
           </div>
 
           <div className="grid gap-5 lg:grid-cols-[1fr_300px]">

@@ -17,7 +17,6 @@ class PdfTemplateOut(BaseModel):
     disclosure_text: str | None = None
     company_data: str | None = None
     design: dict | None = None
-    design: dict | None = None
     created_at: dt.datetime
     updated_at: dt.datetime
 

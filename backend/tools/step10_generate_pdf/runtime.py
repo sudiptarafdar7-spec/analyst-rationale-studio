@@ -171,9 +171,9 @@ def run(job_folder, overrides=None):
         config = fetch_pdf_config(job_id, cfg)
         print(f"✅ Platform: {config['channel_name']} | Report: {config['title']}")
         _dbg = config.get("design") or {}
-        _path = ("page-builder" if (_dbg.get("stock_pages") or _dbg.get("fixed_pages"))
+        _path = ("page-builder" if (_dbg.get("stock_pages") or _dbg.get("fixed_pages") or _dbg.get("pages"))
                  else "absolute" if _dbg.get("layout_mode") == "absolute" else "flow")
-        print(f"🎨 PDF design: {_path} (stock_pages={len(_dbg.get('stock_pages') or [])}, fixed_pages={len(_dbg.get('fixed_pages') or [])})")
+        print(f"🎨 PDF design: {_path} (pages={len(_dbg.get('pages') or [])}, stock_pages={len(_dbg.get('stock_pages') or [])}, fixed_pages={len(_dbg.get('fixed_pages') or [])})")
 
         input_date = config.get("input_date", "")
         try:
@@ -380,7 +380,7 @@ def run(job_folder, overrides=None):
             draw_footer(c)
 
         # ---- Page-based builder: stock_pages (repeated per stock) + fixed_pages ----
-        if DESIGN.get("stock_pages") or DESIGN.get("fixed_pages"):
+        if DESIGN.get("stock_pages") or DESIGN.get("fixed_pages") or DESIGN.get("pages"):
             import xml.sax.saxutils as _sx
             theme_hex = DESIGN.get("theme_color") or cfg.get("theme_color", "#6C4CF1")
             FLOW_FIELDS = {"analysis", "disclaimer", "disclosure"}
@@ -641,22 +641,38 @@ def run(job_folder, overrides=None):
                         remaining.pop(0)  # un-splittable item; drop to avoid an infinite loop
 
             c = pdfcanvas.Canvas(output_pdf, pagesize=A4)
-            stock_pages = DESIGN.get("stock_pages") or []
-            fixed_pages = DESIGN.get("fixed_pages") or []
             pageno = 0
-            for _, row in df.iterrows():
-                for pg in stock_pages:
+            unified = DESIGN.get("pages")
+            if unified:
+                stock_defs = [pg for pg in unified if pg.get("kind", "stock") == "stock"]
+                fixed_defs = [pg for pg in unified if pg.get("kind") == "fixed"]
+                for i, (_, row) in enumerate(df.iterrows()):
+                    for pg in stock_defs:
+                        wh = pg.get("when", "all")
+                        if wh == "all" or (wh == "first" and i == 0) or (wh == "rest" and i > 0):
+                            pageno += 1
+                            for rem in _draw_page(c, pg, row, pageno):
+                                _continue(c, rem)
+                            c.showPage()
+                for pg in fixed_defs:
                     pageno += 1
-                    overflow = _draw_page(c, pg, row, pageno)
-                    for rem in overflow:
+                    for rem in _draw_page(c, pg, None, pageno):
                         _continue(c, rem)
                     c.showPage()
-            for pg in fixed_pages:
-                pageno += 1
-                overflow = _draw_page(c, pg, None, pageno)
-                for rem in overflow:
-                    _continue(c, rem)
-                c.showPage()
+            else:
+                stock_pages = DESIGN.get("stock_pages") or []
+                fixed_pages = DESIGN.get("fixed_pages") or []
+                for _, row in df.iterrows():
+                    for pg in stock_pages:
+                        pageno += 1
+                        for rem in _draw_page(c, pg, row, pageno):
+                            _continue(c, rem)
+                        c.showPage()
+                for pg in fixed_pages:
+                    pageno += 1
+                    for rem in _draw_page(c, pg, None, pageno):
+                        _continue(c, rem)
+                    c.showPage()
             if pageno == 0:
                 c.showPage()
             c.save()
