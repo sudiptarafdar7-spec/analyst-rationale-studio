@@ -81,7 +81,7 @@ function defaultDesign(): Design {
   };
 }
 
-const PAGE_W = 460, PAGE_H = Math.round(460 * 1.4142), PT = 460 / 595;
+const PAGE_W = 520, PAGE_H = Math.round(520 * 1.4142), PT = 520 / 595;
 const ALIGN_ICON: Record<Align, typeof AlignLeft> = { left: AlignLeft, center: AlignCenter, right: AlignRight, justify: AlignJustify };
 const TYPE_ICON: Record<ElType, typeof Type> = { text: Type, heading: Heading, richtext: Pilcrow, field: Database, image: ImageIcon, box: Square };
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -284,13 +284,18 @@ export default function PdfTemplate() {
                           ? <div className="rte-preview pointer-events-none w-full overflow-hidden" style={{ fontSize: (el.size ?? 11) * PT, opacity: el.opacity ?? 1 }} dangerouslySetInnerHTML={{ __html: el.html ?? "" }} />
                           : isImg && el.field === "chart" && sample?.stock?.chart
                           ? <img src={sample.stock.chart} alt="" className="pointer-events-none object-contain" style={{ opacity: el.opacity ?? 1, width: `${el.imgW ?? 100}%`, height: `${el.imgH ?? 100}%` }} />
-                          : <span className="pointer-events-none block w-full" style={{ whiteSpace: el.field === "analysis" || el.field === "disclaimer" || el.field === "disclosure" ? "normal" : "nowrap", overflow: "hidden", opacity: el.opacity ?? 1, fontStyle: el.italic ? "italic" : undefined, textDecoration: el.underline ? "underline" : undefined, color: isBox ? "rgba(255,255,255,.85)" : undefined }}>{label}</span>}
-                        {isSel && <span onPointerDown={(e) => { e.stopPropagation(); drag.current = { id: el.id, mode: "resize", sx: e.clientX, sy: e.clientY, o: el }; }} className="absolute bottom-0 right-0 h-3 w-3 cursor-nwse-resize bg-brand" style={{ borderRadius: 2 }} />}
+                          : <span className="pointer-events-none block w-full" style={{ whiteSpace: inline ? "nowrap" : "normal", overflowWrap: "anywhere", wordBreak: "break-word", overflow: "hidden", opacity: el.opacity ?? 1, fontStyle: el.italic ? "italic" : undefined, textDecoration: el.underline ? "underline" : undefined, color: isBox ? "rgba(255,255,255,.85)" : undefined }}>{label}</span>}
+                        {isSel && <span onPointerDown={(e) => { e.stopPropagation(); if (!el.locked) drag.current = { id: el.id, mode: "resize", sx: e.clientX, sy: e.clientY, o: el }; }} className="absolute bottom-0 right-0 h-3.5 w-3.5 cursor-nwse-resize rounded-sm border-2 border-brand bg-white shadow" />}
                       </div>
                     );
                   })}
                   {guides.v.map((gx, i) => <div key={"v" + i} className="pointer-events-none absolute bottom-0 top-0 w-px bg-brand/70" style={{ left: `${gx}%` }} />)}
                   {guides.h.map((gy, i) => <div key={"h" + i} className="pointer-events-none absolute left-0 right-0 h-px bg-brand/70" style={{ top: `${gy}%` }} />)}
+                  <div className="pointer-events-none absolute inset-[3.5%] border border-dashed border-slate-200" />
+                  {sel && (
+                    <div className="pointer-events-none absolute z-20 rounded bg-brand px-1.5 py-0.5 text-[9px] font-semibold text-white shadow"
+                      style={{ left: `${sel.x}%`, top: `calc(${sel.y}% - 15px)` }}>{Math.round(sel.w)}% × {Math.round(sel.h)}%</div>
+                  )}
                 </div>
               )}
             </div>
