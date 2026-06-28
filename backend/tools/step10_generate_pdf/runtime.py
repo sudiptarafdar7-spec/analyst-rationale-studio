@@ -405,6 +405,17 @@ def run(job_folder, overrides=None, config_override=None):
                     print(f"  (element draw issue: {_e})")
                 return rem
 
+            def _fit_frame(c, x, y, w, h, flowables, pads=(2, 2, 2, 2)):
+                """Draw flowables INSIDE the box, shrinking to fit. No page overflow:
+                content stays exactly where the design places it."""
+                pl, pr, pt, pb = pads
+                iw, ih = max(2, w - pl - pr), max(2, h - pt - pb)
+                try:
+                    Frame(x, y, w, h, leftPadding=pl, rightPadding=pr, topPadding=pt, bottomPadding=pb,
+                          showBoundary=0).addFromList([KeepInFrame(iw, ih, list(flowables), mode="shrink")], c)
+                except Exception as _e:
+                    print(f"  (rich element draw issue: {_e})")
+
             def _field_text(key, row):
                 rv = (lambda col: str(row.get(col, "") or "").strip() if row is not None else "")
                 return {
@@ -533,18 +544,18 @@ def run(job_folder, overrides=None, config_override=None):
                         return None
                     bs, hs = _rich_styles(el)
                     c.saveState(); c.setFillAlpha(opacity)
-                    rem = _frame_remainder(c, x, y, w, h, create_html_flowables(html, bs, hs), pads=pads)
+                    _fit_frame(c, x, y, w, h, create_html_flowables(html, bs, hs), pads=pads)
                     c.restoreState()
-                    return rem or None
+                    return None
                 if typ == "field" and key in ("disclaimer", "disclosure"):
                     html = config.get(f"{key}_text")
                     if not html:
                         return None
                     bs, hs = _rich_styles(el)
                     c.saveState(); c.setFillAlpha(opacity)
-                    rem = _frame_remainder(c, x, y, w, h, create_html_flowables(html, bs, hs), pads=pads)
+                    _fit_frame(c, x, y, w, h, create_html_flowables(html, bs, hs), pads=pads)
                     c.restoreState()
-                    return rem or None
+                    return None
 
                 if typ == "field" and key == "page_no":
                     text = f"Page {pageno}"
@@ -569,13 +580,6 @@ def run(job_folder, overrides=None, config_override=None):
                 if el.get("underline"):
                     markup = f"<u>{markup}</u>"
                 para = Paragraph(markup, style)
-
-                # analysis flows across pages; other single fields fit their box (never vanish)
-                if typ == "field" and key in FLOW_FIELDS:
-                    c.saveState(); c.setFillAlpha(opacity)
-                    rem = _frame_remainder(c, x, y, w, h, [para], pads=pads)
-                    c.restoreState()
-                    return rem or None
 
                 # inline width: shrink the box to the text width
                 bw, bh = w, h
