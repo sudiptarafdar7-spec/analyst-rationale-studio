@@ -17,6 +17,7 @@ interface El {
   size?: number; weight?: "normal" | "bold"; color?: string; align?: Align;
   bg?: string; borderW?: number; borderColor?: string; radius?: number; pad?: number;
   html?: string; font?: "sans" | "serif" | "mono"; italic?: boolean; underline?: boolean; lh?: number; opacity?: number; locked?: boolean;
+  padT?: number; padR?: number; padB?: number; padL?: number; bT?: number; bR?: number; bB?: number; bL?: number; shadow?: boolean; widthMode?: "custom" | "full" | "inline"; imgW?: number; imgH?: number;
 }
 interface Page { id: string; bg?: string; elements: El[] }
 interface Design { theme_color: string; stock_pages: Page[]; fixed_pages: Page[] }
@@ -260,24 +261,29 @@ export default function PdfTemplate() {
                     const isSel = selId === el.id;
                     const isImg = el.type === "image", isBox = el.type === "box";
                     const label = el.type === "field" ? previewText(el) : isImg ? `🖼 ${el.field}` : el.text ?? "";
+                    const bT = el.bT ?? el.borderW ?? 0, bR = el.bR ?? el.borderW ?? 0, bB = el.bB ?? el.borderW ?? 0, bL = el.bL ?? el.borderW ?? 0;
+                    const anyB = bT || bR || bB || bL;
+                    const padCss = `${(el.padT ?? el.pad ?? 2) * PT}px ${(el.padR ?? el.pad ?? 2) * PT}px ${(el.padB ?? el.pad ?? 2) * PT}px ${(el.padL ?? el.pad ?? 2) * PT}px`;
+                    const inline = el.widthMode === "inline";
                     return (
                       <div key={el.id} onPointerDown={(e) => { e.stopPropagation(); setSelId(el.id); if (!el.locked) drag.current = { id: el.id, mode: "move", sx: e.clientX, sy: e.clientY, o: el }; }}
                         className={`absolute cursor-move overflow-hidden ${isSel ? "outline outline-2 outline-brand" : "hover:outline hover:outline-1 hover:outline-brand/40"}`}
                         style={{
-                          left: `${el.x}%`, top: `${el.y}%`, width: `${el.w}%`, height: `${el.h}%`,
+                          left: `${el.x}%`, top: `${el.y}%`, width: inline ? "auto" : `${el.w}%`, maxWidth: inline ? `${100 - el.x}%` : undefined, height: `${el.h}%`,
                           background: el.bg ?? (isImg ? "#eef2f7" : "transparent"),
-                          border: (el.borderW ?? 0) > 0 ? `${el.borderW}px solid ${el.borderColor}` : isImg ? "1px dashed #cbd5e1" : undefined,
+                          ...(anyB ? { borderStyle: "solid", borderColor: el.borderColor ?? "#cccccc", borderTopWidth: bT, borderRightWidth: bR, borderBottomWidth: bB, borderLeftWidth: bL } : isImg ? { border: "1px dashed #cbd5e1" } : {}),
+                          boxShadow: el.shadow ? "3px 3px 7px rgba(0,0,0,.22)" : undefined,
                           borderRadius: el.radius ? el.radius : undefined,
                           color: el.color, fontSize: (el.size ?? 10) * PT, fontWeight: el.weight === "bold" ? 700 : 400,
                           display: "flex", alignItems: isImg ? "center" : "flex-start",
                           justifyContent: isImg ? "center" : el.align === "center" ? "center" : el.align === "right" ? "flex-end" : "flex-start",
-                          padding: `${Math.max(0, el.pad ?? 2) * PT}px`, lineHeight: 1.25,
+                          padding: padCss, lineHeight: 1.25,
                           textAlign: (el.align === "justify" ? "left" : el.align) as React.CSSProperties["textAlign"],
                         }}>
                         {el.type === "richtext"
                           ? <div className="rte-preview pointer-events-none w-full overflow-hidden" style={{ fontSize: (el.size ?? 11) * PT, opacity: el.opacity ?? 1 }} dangerouslySetInnerHTML={{ __html: el.html ?? "" }} />
                           : isImg && el.field === "chart" && sample?.stock?.chart
-                          ? <img src={sample.stock.chart} alt="" className="pointer-events-none h-full w-full object-contain" style={{ opacity: el.opacity ?? 1 }} />
+                          ? <img src={sample.stock.chart} alt="" className="pointer-events-none object-contain" style={{ opacity: el.opacity ?? 1, width: `${el.imgW ?? 100}%`, height: `${el.imgH ?? 100}%` }} />
                           : <span className="pointer-events-none block w-full" style={{ whiteSpace: el.field === "analysis" || el.field === "disclaimer" || el.field === "disclosure" ? "normal" : "nowrap", overflow: "hidden", opacity: el.opacity ?? 1, fontStyle: el.italic ? "italic" : undefined, textDecoration: el.underline ? "underline" : undefined, color: isBox ? "rgba(255,255,255,.85)" : undefined }}>{label}</span>}
                         {isSel && <span onPointerDown={(e) => { e.stopPropagation(); drag.current = { id: el.id, mode: "resize", sx: e.clientX, sy: e.clientY, o: el }; }} className="absolute bottom-0 right-0 h-3 w-3 cursor-nwse-resize bg-brand" style={{ borderRadius: 2 }} />}
                       </div>
@@ -354,12 +360,41 @@ export default function PdfTemplate() {
                       </>
                     )}
                     <div><label className="label">Background</label><div className="flex gap-2"><input type="color" className="h-9 w-full cursor-pointer rounded border border-slate-200" value={sel.bg ?? "#ffffff"} onChange={(e) => patchEl(sel.id, { bg: e.target.value })} /><button className="btn-ghost h-9 px-2 text-xs" onClick={() => patchEl(sel.id, { bg: undefined })}>None</button></div></div>
-                    <div className="grid grid-cols-4 gap-2">
-                      <div><label className="label">Pad</label><input type="number" className="input h-9" value={sel.pad ?? 2} onChange={(e) => patchEl(sel.id, { pad: Number(e.target.value) })} /></div>
-                      <div><label className="label">Border</label><input type="number" className="input h-9" value={sel.borderW ?? 0} onChange={(e) => patchEl(sel.id, { borderW: Number(e.target.value) })} /></div>
+                    <div>
+                      <label className="label">Inner padding (T R B L)</label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {(["padT", "padR", "padB", "padL"] as const).map((k) => (
+                          <input key={k} type="number" className="input h-9" value={sel[k] ?? sel.pad ?? 2} onChange={(e) => patchEl(sel.id, { [k]: Number(e.target.value) } as Partial<El>)} />
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="label">Border (T R B L)</label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {(["bT", "bR", "bB", "bL"] as const).map((k) => (
+                          <input key={k} type="number" className="input h-9" value={sel[k] ?? sel.borderW ?? 0} onChange={(e) => patchEl(sel.id, { [k]: Number(e.target.value) } as Partial<El>)} />
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
                       <div><label className="label">B.colour</label><input type="color" className="h-9 w-full cursor-pointer rounded border border-slate-200" value={sel.borderColor ?? "#cccccc"} onChange={(e) => patchEl(sel.id, { borderColor: e.target.value })} /></div>
                       <div><label className="label">Radius</label><input type="number" className="input h-9" value={sel.radius ?? 0} onChange={(e) => patchEl(sel.id, { radius: Number(e.target.value) })} /></div>
+                      <div><label className="label">Shadow</label><button onClick={() => patchEl(sel.id, { shadow: !sel.shadow })} className={`h-9 w-full rounded-lg border text-xs ${sel.shadow ? "border-brand bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500"}`}>{sel.shadow ? "On" : "Off"}</button></div>
                     </div>
+                    <div>
+                      <label className="label">Width</label>
+                      <div className="flex gap-1">
+                        {(["custom", "full", "inline"] as const).map((m) => (
+                          <button key={m} onClick={() => (m === "full" ? patchEl(sel.id, { widthMode: "full", x: 0, w: 100 }) : patchEl(sel.id, { widthMode: m }))} className={`flex-1 rounded-lg border px-2 py-1.5 text-xs capitalize ${(sel.widthMode ?? "custom") === m ? "border-brand bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500"}`}>{m}</button>
+                        ))}
+                      </div>
+                    </div>
+                    {selMeta.isImage && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div><label className="label">Image W %</label><input type="number" className="input h-9" value={sel.imgW ?? 100} onChange={(e) => patchEl(sel.id, { imgW: Number(e.target.value) })} /></div>
+                        <div><label className="label">Image H %</label><input type="number" className="input h-9" value={sel.imgH ?? 100} onChange={(e) => patchEl(sel.id, { imgH: Number(e.target.value) })} /></div>
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-2">
                       <div><label className="label">Opacity</label><input type="range" min={0} max={1} step={0.05} className="h-9 w-full" value={sel.opacity ?? 1} onChange={(e) => patchEl(sel.id, { opacity: Number(e.target.value) })} /></div>
                       <div><label className="label">Line height</label><input type="number" step={0.05} className="input h-9" value={sel.lh ?? 1.34} onChange={(e) => patchEl(sel.id, { lh: Number(e.target.value) })} /></div>

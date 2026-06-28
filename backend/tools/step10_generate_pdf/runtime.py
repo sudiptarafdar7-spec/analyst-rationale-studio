@@ -30,7 +30,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas as pdfcanvas
 from reportlab.platypus import (
-    Flowable, Frame, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+    Flowable, Frame, Image, KeepInFrame, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 from sqlalchemy import select
 
@@ -401,12 +401,18 @@ def run(job_folder, overrides=None):
                 y_top = _num(el.get("y"), 0) / 100.0 * PAGE_H
                 return x, PAGE_H - y_top - h, w, h
 
-            def _frame_remainder(c, x, y, w, h, flowables, pad=2):
+            def _pads(el):
+                base = max(0.0, _num(el.get("pad"), 2))
+                return (_num(el.get("padL"), base), _num(el.get("padR"), base),
+                        _num(el.get("padT"), base), _num(el.get("padB"), base))
+
+            def _frame_remainder(c, x, y, w, h, flowables, pads=(2, 2, 2, 2)):
                 """Draw flowables into the box; return whatever did not fit."""
+                pl, pr, pt, pb = pads
                 rem = list(flowables)
                 try:
-                    Frame(x, y, w, h, leftPadding=pad, rightPadding=pad, topPadding=pad,
-                          bottomPadding=pad, showBoundary=0).addFromList(rem, c)
+                    Frame(x, y, w, h, leftPadding=pl, rightPadding=pr, topPadding=pt,
+                          bottomPadding=pb, showBoundary=0).addFromList(rem, c)
                 except Exception as _e:
                     print(f"  (element draw issue: {_e})")
                 return rem
@@ -465,58 +471,93 @@ def run(job_folder, overrides=None):
                     return None
                 typ = el.get("type", "text")
                 x, y, w, h = _box(el)
-                pad = max(0.0, _num(el.get("pad"), 2))
+                pl, pr, pt, pb = _pads(el)
                 opacity = _num(el.get("opacity"), 1)
+
+                # drop shadow (offset translucent rect)
+                if el.get("shadow"):
+                    c.saveState()
+                    c.setFillColor(colors.HexColor("#000000"))
+                    c.setFillAlpha(0.18)
+                    c.rect(x + 2.5, y - 2.5, w, h, fill=1, stroke=0)
+                    c.restoreState()
+
+                # background
                 if el.get("bg"):
                     c.saveState()
                     c.setFillAlpha(opacity)
                     c.setFillColor(_hexc(el.get("bg"), "#ffffff"))
                     c.rect(x, y, w, h, fill=1, stroke=0)
                     c.restoreState()
+
+                def _borders():
+                    allw = _num(el.get("borderW"), 0)
+                    sides = {
+                        "L": _num(el.get("bL"), allw), "R": _num(el.get("bR"), allw),
+                        "T": _num(el.get("bT"), allw), "B": _num(el.get("bB"), allw),
+                    }
+                    col = _hexc(el.get("borderColor"), "#cccccc")
+                    if not any(v > 0 for v in sides.values()):
+                        return
+                    c.saveState()
+                    c.setStrokeColor(col)
+                    c.setStrokeAlpha(opacity)
+                    for side, wd in sides.items():
+                        if wd <= 0:
+                            continue
+                        c.setLineWidth(wd)
+                        if side == "L":
+                            c.line(x, y, x, y + h)
+                        elif side == "R":
+                            c.line(x + w, y, x + w, y + h)
+                        elif side == "T":
+                            c.line(x, y + h, x + w, y + h)
+                        else:
+                            c.line(x, y, x + w, y)
+                    c.restoreState()
+
                 if typ == "image":
                     pth = _field_image(el.get("field", "chart"), row)
+                    iw = w * _num(el.get("imgW"), 100) / 100.0
+                    ih = h * _num(el.get("imgH"), 100) / 100.0
+                    ix, iy = x + (w - iw) / 2, y + (h - ih) / 2
                     if pth and os.path.exists(pth):
                         try:
-                            c.drawImage(pth, x, y, w, h, preserveAspectRatio=True, anchor="c", mask="auto")
+                            c.saveState()
+                            c.setFillAlpha(opacity)
+                            c.drawImage(pth, ix, iy, iw, ih, preserveAspectRatio=True, anchor="c", mask="auto")
+                            c.restoreState()
                         except Exception:
                             pass
-                    bw = _num(el.get("borderW"), 0)
-                    if bw > 0:
-                        c.setStrokeColor(_hexc(el.get("borderColor"), "#cccccc"))
-                        c.setLineWidth(bw)
-                        c.rect(x, y, w, h, fill=0, stroke=1)
+                    _borders()
                     return None
-                bw = _num(el.get("borderW"), 0)
-                if bw > 0:
-                    c.setStrokeColor(_hexc(el.get("borderColor"), "#cccccc"))
-                    c.setLineWidth(bw)
-                    c.rect(x, y, w, h, fill=0, stroke=1)
+
+                _borders()
                 if typ == "box":
                     return None
+
                 key = el.get("field")
-                # rich disclaimer / disclosure: render the HTML, flow overflow
+                pads = (pl, pr, pt, pb)
+                # rich / long content: render HTML or analysis with page overflow
                 if typ == "richtext":
                     html = el.get("html") or ""
                     if not html.strip():
                         return None
                     bs, hs = _rich_styles(el)
-                    if opacity < 1:
-                        c.setFillAlpha(opacity)
-                    rem = _frame_remainder(c, x, y, w, h, create_html_flowables(html, bs, hs), pad=pad)
-                    if opacity < 1:
-                        c.setFillAlpha(1)
+                    c.saveState(); c.setFillAlpha(opacity)
+                    rem = _frame_remainder(c, x, y, w, h, create_html_flowables(html, bs, hs), pads=pads)
+                    c.restoreState()
                     return rem or None
                 if typ == "field" and key in ("disclaimer", "disclosure"):
                     html = config.get(f"{key}_text")
                     if not html:
                         return None
                     bs, hs = _rich_styles(el)
-                    if opacity < 1:
-                        c.setFillAlpha(opacity)
-                    rem = _frame_remainder(c, x, y, w, h, create_html_flowables(html, bs, hs), pad=pad)
-                    if opacity < 1:
-                        c.setFillAlpha(1)
+                    c.saveState(); c.setFillAlpha(opacity)
+                    rem = _frame_remainder(c, x, y, w, h, create_html_flowables(html, bs, hs), pads=pads)
+                    c.restoreState()
                     return rem or None
+
                 if typ == "field" and key == "page_no":
                     text = f"Page {pageno}"
                 elif typ == "field":
@@ -525,6 +566,7 @@ def run(job_folder, overrides=None):
                     text = el.get("text", "")
                 if not str(text).strip():
                     return None
+
                 dsize = 17 if typ == "heading" else 10.8
                 sz = _num(el.get("size"), dsize)
                 reg, bld = _font_pair(el)
@@ -538,14 +580,37 @@ def run(job_folder, overrides=None):
                     markup = f"<i>{markup}</i>"
                 if el.get("underline"):
                     markup = f"<u>{markup}</u>"
-                if opacity < 1:
-                    c.setFillAlpha(opacity)
-                rem = _frame_remainder(c, x, y, w, h, [Paragraph(markup, style)], pad=pad)
-                if opacity < 1:
-                    c.setFillAlpha(1)
-                # Only long fields flow onto continuation pages; everything else clips.
+                para = Paragraph(markup, style)
+
+                # analysis flows across pages; other single fields fit their box (never vanish)
                 if typ == "field" and key in FLOW_FIELDS:
+                    c.saveState(); c.setFillAlpha(opacity)
+                    rem = _frame_remainder(c, x, y, w, h, [para], pads=pads)
+                    c.restoreState()
                     return rem or None
+
+                # inline width: shrink the box to the text width
+                bw, bh = w, h
+                if el.get("widthMode") == "inline":
+                    try:
+                        tw = c.stringWidth(re.sub(r"<[^>]+>", "", text), style.fontName, sz) + pl + pr + 2
+                        bw = min(max(tw, 6), PAGE_W - x)
+                    except Exception:
+                        pass
+                inner_w = max(2, bw - pl - pr)
+                inner_h = max(2, bh - pt - pb)
+                c.saveState(); c.setFillAlpha(opacity)
+                try:
+                    Frame(x, y, bw, bh, leftPadding=pl, rightPadding=pr, topPadding=pt, bottomPadding=pb,
+                          showBoundary=0).addFromList([KeepInFrame(inner_w, inner_h, [para], mode="shrink")], c)
+                except Exception as _e:
+                    try:
+                        c.setFillColor(_hexc(el.get("color"), "#111111"))
+                        c.setFont(style.fontName, sz)
+                        c.drawString(x + pl, y + bh - pt - sz, re.sub(r"<[^>]+>", "", text)[:200])
+                    except Exception:
+                        pass
+                c.restoreState()
                 return None
 
             def _draw_page(c, pg, row, pageno):
