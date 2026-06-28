@@ -294,9 +294,11 @@ export default function PdfTemplate() {
                     const imgSrc = isImg ? (el.field === "chart" ? sample?.stock?.chart : el.field === "logo" ? sample?.company_logo : el.field === "channel_logo" ? sample?.channel_logo : null) : null;
                     return (
                       <div key={el.id} onPointerDown={(e) => { e.stopPropagation(); setSelId(el.id); if (!el.locked) drag.current = { id: el.id, mode: "move", sx: e.clientX, sy: e.clientY, o: el }; }}
-                        className={`absolute cursor-move overflow-hidden ${isSel ? "outline outline-2 outline-brand" : "hover:outline hover:outline-1 hover:outline-brand/40"}`}
+                        className={`absolute cursor-move ${el.type === "richtext" ? "" : "overflow-hidden"} ${isSel ? "outline outline-2 outline-brand" : "hover:outline hover:outline-1 hover:outline-brand/40"}`}
                         style={{
-                          left: `${el.x}%`, top: `${el.y}%`, width: inline ? "auto" : `${el.w}%`, maxWidth: inline ? `${100 - el.x}%` : undefined, height: `${el.h}%`,
+                          left: `${el.x}%`, top: `${el.y}%`,
+                          width: inline ? "max-content" : `${el.w}%`, maxWidth: inline ? `${100 - el.x}%` : undefined,
+                          height: el.type === "richtext" ? "auto" : `${el.h}%`, minHeight: el.type === "richtext" ? `${el.h}%` : undefined,
                           background: el.bg ?? (isImg ? "#eef2f7" : "transparent"),
                           ...(anyB ? { borderStyle: "solid", borderColor: el.borderColor ?? "#cccccc", borderTopWidth: bT, borderRightWidth: bR, borderBottomWidth: bB, borderLeftWidth: bL } : isImg ? { border: "1px dashed #cbd5e1" } : {}),
                           boxShadow: el.shadow ? "3px 3px 7px rgba(0,0,0,.22)" : undefined,
@@ -308,10 +310,10 @@ export default function PdfTemplate() {
                           textAlign: (el.align === "justify" ? "left" : el.align) as React.CSSProperties["textAlign"],
                         }}>
                         {el.type === "richtext"
-                          ? <div className="rte-preview pointer-events-none w-full overflow-hidden" style={{ fontSize: (el.size ?? 11) * PT, opacity: el.opacity ?? 1 }} dangerouslySetInnerHTML={{ __html: el.html ?? "" }} />
+                          ? <div className="rte-preview pointer-events-none w-full" style={{ fontSize: (el.size ?? 11) * PT, opacity: el.opacity ?? 1 }} dangerouslySetInnerHTML={{ __html: el.html ?? "" }} />
                           : isImg && imgSrc
                           ? <img src={imgSrc} alt="" className="pointer-events-none object-contain" style={{ opacity: el.opacity ?? 1, width: `${el.imgW ?? 100}%`, height: `${el.imgH ?? 100}%` }} />
-                          : <span className="pointer-events-none block w-full" style={{ whiteSpace: inline ? "nowrap" : "normal", overflowWrap: "anywhere", wordBreak: "break-word", overflow: "hidden", opacity: el.opacity ?? 1, fontStyle: el.italic ? "italic" : undefined, textDecoration: el.underline ? "underline" : undefined, color: isBox ? "rgba(255,255,255,.85)" : undefined }}>{label}</span>}
+                          : <span className={`pointer-events-none block ${inline ? "w-auto" : "w-full"}`} style={{ whiteSpace: inline ? "nowrap" : "normal", overflowWrap: "anywhere", wordBreak: "break-word", overflow: "hidden", opacity: el.opacity ?? 1, fontStyle: el.italic ? "italic" : undefined, textDecoration: el.underline ? "underline" : undefined, color: isBox ? "rgba(255,255,255,.85)" : undefined }}>{label}</span>}
                         {isSel && <span onPointerDown={(e) => { e.stopPropagation(); if (!el.locked) drag.current = { id: el.id, mode: "resize", sx: e.clientX, sy: e.clientY, o: el }; }} className="absolute bottom-0 right-0 h-3.5 w-3.5 cursor-nwse-resize rounded-sm border-2 border-brand bg-white shadow" />}
                       </div>
                     );
