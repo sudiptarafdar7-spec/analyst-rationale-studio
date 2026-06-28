@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, ArrowLeft, CalendarClock, Check, CheckCircle2, ChevronRight, CloudUpload,
   Download, Eye, EyeOff, Facebook, Globe, Instagram, Loader2, MessageCircle, Play,
-  RotateCcw, Send, Trash2, TrendingUp, Users, X, Youtube,
+  Plus, RotateCcw, Send, Trash2, TrendingUp, Users, X, Youtube,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { api, ApiError } from "../lib/api";
@@ -453,6 +453,8 @@ function MappingGate({ jobId, onDone }: { jobId: string; onDone: () => void }) {
       .then((r) => setRows(r.rows.map((x) => ({ ...x })))).catch(() => toast.error("Could not load mapping")).finally(() => setLoading(false));
   }, [jobId]);
   const setCell = (i: number, col: string, v: string) => setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, [col]: v } : r)));
+  const addRow = () => setRows((rs) => [...rs, Object.fromEntries(MAP_COLS.map((c) => [c, ""]))]);
+  const deleteRow = (i: number) => setRows((rs) => rs.filter((_, idx) => idx !== i));
   const submit = async () => {
     setSaving(true);
     try { await api.post(`/jobs/${jobId}/review/mapping`, { rows }); toast.success("Saved — resuming from step 8"); setTimeout(onDone, 400); }
@@ -465,7 +467,7 @@ function MappingGate({ jobId, onDone }: { jobId: string; onDone: () => void }) {
         <div className="mt-3 max-h-[68vh] overflow-auto rounded-xl border border-slate-200">
           <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 bg-slate-50">
-              <tr>{MAP_COLS.map((c) => <th key={c} className="border-b border-slate-200 px-2 py-2 text-left text-xs font-semibold text-slate-500">{c}</th>)}</tr>
+              <tr>{MAP_COLS.map((c) => <th key={c} className="border-b border-slate-200 px-2 py-2 text-left text-xs font-semibold text-slate-500">{c}</th>)}<th className="w-9 border-b border-slate-200" /></tr>
             </thead>
             <tbody>
               {rows.map((r, i) => {
@@ -489,6 +491,9 @@ function MappingGate({ jobId, onDone }: { jobId: string; onDone: () => void }) {
                         )}
                       </td>
                     ))}
+                    <td className="border-b border-slate-100 px-1 text-center align-middle">
+                      <button type="button" onClick={() => deleteRow(i)} title="Delete row" className="grid h-7 w-7 place-items-center rounded-lg text-slate-300 transition hover:bg-slate-100 hover:text-danger"><Trash2 size={13} /></button>
+                    </td>
                   </tr>
                 );
               })}
@@ -496,7 +501,8 @@ function MappingGate({ jobId, onDone }: { jobId: string; onDone: () => void }) {
           </table>
         </div>
       )}
-      <div className="mt-4 flex justify-end">
+      <div className="mt-4 flex items-center justify-between">
+        <button type="button" className="btn-ghost" disabled={loading} onClick={addRow}><Plus size={16} /> Add row</button>
         <button className="btn-primary" disabled={saving || loading} onClick={submit}>{saving && <Loader2 size={16} className="animate-spin" />} Save &amp; Continue <ChevronRight size={16} /></button>
       </div>
     </div>
