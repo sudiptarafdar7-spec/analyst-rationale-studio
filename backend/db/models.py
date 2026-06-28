@@ -222,9 +222,6 @@ class PdfTemplate(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = _uuid_pk()
     company_name: Mapped[str] = mapped_column(Text, nullable=False)
     registration_details: Mapped[str | None] = mapped_column(Text)
-    disclaimer_text: Mapped[str | None] = mapped_column(Text)
-    disclosure_text: Mapped[str | None] = mapped_column(Text)
-    company_data: Mapped[str | None] = mapped_column(Text)
     design: Mapped[dict | None] = mapped_column(JSONB)
 
 

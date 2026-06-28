@@ -12,11 +12,12 @@ import re
 
 from core.deps import require_admin
 from core.permissions import require_perm
-from db.enums import JobStatus
-from db.models import Channel, Job, PdfTemplate, User
+from db.enums import JobStatus, UploadedFileType
+from db.models import Channel, Job, PdfTemplate, UploadedFile, User
 from db.session import get_db
 from schemas.pdf_template import PdfTemplateOut, PdfTemplateUpsert
 from services.pipeline import job_folder
+from utils.path_utils import resolve_uploaded_file_path
 
 router = APIRouter(prefix="/admin/pdf-template", tags=["admin:pdf-template"])
 
@@ -46,9 +47,6 @@ def upsert_template(
         db.add(row)
     row.company_name = body.company_name.strip() or row.company_name or "Company"
     row.registration_details = body.registration_details
-    row.disclaimer_text = body.disclaimer_text
-    row.disclosure_text = body.disclosure_text
-    row.company_data = body.company_data
     row.design = body.design
     db.commit()
     db.refresh(row)
@@ -60,6 +58,20 @@ def _strip_html(t: str | None) -> str:
     return " ".join(re.sub(r"<[^>]+>", " ", t).split()) if ("<" in t and ">" in t) else t
 
 
+def _b64_image(path: str | None) -> str | None:
+    if not path:
+        return None
+    ap = resolve_uploaded_file_path(path) if not os.path.isabs(path) else path
+    if not ap or not os.path.exists(ap) or os.path.getsize(ap) > 4_000_000:
+        return None
+    ext = os.path.splitext(ap)[1].lstrip(".").lower() or "png"
+    mime = "jpeg" if ext in ("jpg", "jpeg") else ext
+    try:
+        return f"data:image/{mime};base64," + base64.b64encode(open(ap, "rb").read()).decode()
+    except Exception:
+        return None
+
+
 @router.get("/sample")
 def sample_data(
     db: Session = Depends(get_db),
@@ -68,12 +80,15 @@ def sample_data(
     """Real example data from the most recent job that has generated stocks, so the
     builder preview shows a true stock name / symbol / analysis / chart."""
     tpl = _latest(db)
+    clogo = db.scalar(
+        select(UploadedFile).where(UploadedFile.file_type == UploadedFileType.companyLogo)
+        .order_by(UploadedFile.uploaded_at.desc())
+    )
     out: dict = {
         "company_name": (tpl.company_name if tpl else "") or "Acme Research Pvt. Ltd.",
         "registration": _strip_html(tpl.registration_details if tpl else "") or "SEBI Reg: INH000000000",
-        "disclaimer": (tpl.disclaimer_text if tpl else "") or "Investments are subject to market risks…",
-        "disclosure": (tpl.disclosure_text if tpl else "") or "The analyst holds no position…",
         "channel": "Money9", "platform": "YouTube", "url": "youtu.be/abc123", "stock": None,
+        "company_logo": _b64_image(clogo.file_path if clogo else None), "channel_logo": None,
     }
     jobs = db.scalars(
         select(Job).where(Job.status.in_([JobStatus.completed, JobStatus.saved, JobStatus.signed]))
@@ -95,6 +110,7 @@ def sample_data(
         if chan:
             out["channel"] = chan.channel_name
             out["platform"] = chan.platform or out["platform"]
+            out["channel_logo"] = _b64_image(chan.channel_logo_path) or out["channel_logo"]
         out["url"] = job.youtube_url or out["url"]
         chart_data = None
         cp = (r.get("CHART PATH") or "").strip()

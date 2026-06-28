@@ -23,7 +23,7 @@ type PageKind = "stock" | "fixed";
 type PageWhen = "first" | "rest" | "all";
 interface Page { id: string; kind: PageKind; when?: PageWhen; bg?: string; elements: El[] }
 interface Design { theme_color: string; pages: Page[] }
-interface SampleData { company_name: string; registration: string; disclaimer: string; disclosure: string; channel: string; platform: string; url: string; stock: { stock_name: string; stock_symbol: string; short_name: string; date: string; analysis: string; chart: string | null } | null }
+interface SampleData { company_name: string; registration: string; channel: string; platform: string; url: string; company_logo: string | null; channel_logo: string | null; stock: { stock_name: string; stock_symbol: string; short_name: string; date: string; analysis: string; chart: string | null } | null }
 
 // Dynamic fields from the pipeline / template.
 const TEXT_FIELDS: { key: string; label: string; sample: string; stockOnly?: boolean; multiline?: boolean }[] = [
@@ -38,8 +38,6 @@ const TEXT_FIELDS: { key: string; label: string; sample: string; stockOnly?: boo
   { key: "platform", label: "Platform", sample: "YouTube" },
   { key: "url", label: "Video URL", sample: "youtu.be/abc123" },
   { key: "page_no", label: "Page number", sample: "Page 1" },
-  { key: "disclaimer", label: "Disclaimer (rich)", sample: "Investments are subject to market risks…", multiline: true },
-  { key: "disclosure", label: "Disclosure (rich)", sample: "The analyst holds no position…", multiline: true },
 ];
 const IMAGE_FIELDS = [
   { key: "chart", label: "Stock chart", stockOnly: true },
@@ -78,11 +76,9 @@ function defaultDesign(): Design {
         f("field", 44, 95, 12, 3, { field: "page_no", color: "#111111", size: 8.5, align: "center" }),
       ] },
       { id: uid(), kind: "fixed", elements: [
-        f("heading", 4, 6, 60, 4, { text: "Disclaimer", color: "#6C4CF1", size: 16, weight: "bold" }),
-        f("field", 4, 12, 92, 30, { field: "disclaimer", color: "#333333", size: 9.5, align: "justify" }),
-        f("heading", 4, 46, 60, 4, { text: "Disclosure", color: "#6C4CF1", size: 16, weight: "bold" }),
-        f("field", 4, 52, 92, 24, { field: "disclosure", color: "#333333", size: 9.5, align: "justify" }),
-        f("heading", 60, 82, 36, 4, { text: "Authorised Signatory", color: "#444444", size: 11, weight: "bold" }),
+        f("richtext", 4, 6, 92, 40, { html: "<h2>Disclaimer</h2><p>Investments are subject to market risks. Read all related documents carefully before investing.</p>", color: "#333333", size: 10 }),
+        f("richtext", 4, 50, 92, 30, { html: "<h2>Disclosure</h2><p>The analyst holds no position in the securities discussed.</p>", color: "#333333", size: 10 }),
+        f("heading", 60, 84, 36, 4, { text: "Authorised Signatory", color: "#444444", size: 11, weight: "bold" }),
       ] },
     ],
   };
@@ -100,7 +96,7 @@ export default function PdfTemplate() {
   const [pageIdx, setPageIdx] = useState(0);
   const [design, setDesign] = useState<Design>(defaultDesign);
   const [selId, setSelId] = useState<string | null>(null);
-  const [content, setContent] = useState({ company_name: "", registration_details: "", disclaimer_text: "", disclosure_text: "", company_data: "" });
+  const [content, setContent] = useState({ company_name: "", registration_details: "" });
   const drag = useRef<{ id: string; mode: "move" | "resize"; sx: number; sy: number; o: El } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
@@ -111,8 +107,6 @@ export default function PdfTemplate() {
     if (!data) return;
     setContent({
       company_name: (data.company_name as string) ?? "", registration_details: (data.registration_details as string) ?? "",
-      disclaimer_text: (data.disclaimer_text as string) ?? "", disclosure_text: (data.disclosure_text as string) ?? "",
-      company_data: (data.company_data as string) ?? "",
     });
     const d = data.design as (Partial<Design> & { stock_pages?: Page[]; fixed_pages?: Page[] }) | null;
     if (d?.pages?.length) {
@@ -207,13 +201,11 @@ export default function PdfTemplate() {
   const imgOpts = isStockPage ? IMAGE_FIELDS : IMAGE_FIELDS.filter((f) => !f.stockOnly);
   const pageLabel = (p: Page) => (p.kind === "fixed" ? "Fixed" : p.when === "first" ? "Stock·1st" : p.when === "rest" ? "Stock·rest" : "Stock·all");
   const purposeValue = (p: Page) => (p.kind === "fixed" ? "fixed:" : `stock:${p.when ?? "all"}`);
-  const stripTags = (t: string) => t.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   const previewText = (el: El): string => {
     if (el.type !== "field") return el.text ?? "";
     const k = el.field;
     if (k && ["stock_name", "stock_symbol", "short_name", "date", "analysis"].includes(k)) return (sample?.stock?.[k as keyof NonNullable<SampleData["stock"]>] as string) || fieldSample(k);
     if (k && ["company_name", "registration", "channel", "platform", "url"].includes(k)) return (sample?.[k as keyof SampleData] as string) || fieldSample(k);
-    if (k === "disclaimer" || k === "disclosure") return stripTags((sample?.[k] as string) || fieldSample(k));
     return fieldSample(k);
   };
 
@@ -287,6 +279,7 @@ export default function PdfTemplate() {
                     const anyB = bT || bR || bB || bL;
                     const padCss = `${(el.padT ?? el.pad ?? 2) * PT}px ${(el.padR ?? el.pad ?? 2) * PT}px ${(el.padB ?? el.pad ?? 2) * PT}px ${(el.padL ?? el.pad ?? 2) * PT}px`;
                     const inline = el.widthMode === "inline";
+                    const imgSrc = isImg ? (el.field === "chart" ? sample?.stock?.chart : el.field === "logo" ? sample?.company_logo : el.field === "channel_logo" ? sample?.channel_logo : null) : null;
                     return (
                       <div key={el.id} onPointerDown={(e) => { e.stopPropagation(); setSelId(el.id); if (!el.locked) drag.current = { id: el.id, mode: "move", sx: e.clientX, sy: e.clientY, o: el }; }}
                         className={`absolute cursor-move overflow-hidden ${isSel ? "outline outline-2 outline-brand" : "hover:outline hover:outline-1 hover:outline-brand/40"}`}
@@ -304,8 +297,8 @@ export default function PdfTemplate() {
                         }}>
                         {el.type === "richtext"
                           ? <div className="rte-preview pointer-events-none w-full overflow-hidden" style={{ fontSize: (el.size ?? 11) * PT, opacity: el.opacity ?? 1 }} dangerouslySetInnerHTML={{ __html: el.html ?? "" }} />
-                          : isImg && el.field === "chart" && sample?.stock?.chart
-                          ? <img src={sample.stock.chart} alt="" className="pointer-events-none object-contain" style={{ opacity: el.opacity ?? 1, width: `${el.imgW ?? 100}%`, height: `${el.imgH ?? 100}%` }} />
+                          : isImg && imgSrc
+                          ? <img src={imgSrc} alt="" className="pointer-events-none object-contain" style={{ opacity: el.opacity ?? 1, width: `${el.imgW ?? 100}%`, height: `${el.imgH ?? 100}%` }} />
                           : <span className="pointer-events-none block w-full" style={{ whiteSpace: inline ? "nowrap" : "normal", overflowWrap: "anywhere", wordBreak: "break-word", overflow: "hidden", opacity: el.opacity ?? 1, fontStyle: el.italic ? "italic" : undefined, textDecoration: el.underline ? "underline" : undefined, color: isBox ? "rgba(255,255,255,.85)" : undefined }}>{label}</span>}
                         {isSel && <span onPointerDown={(e) => { e.stopPropagation(); if (!el.locked) drag.current = { id: el.id, mode: "resize", sx: e.clientX, sy: e.clientY, o: el }; }} className="absolute bottom-0 right-0 h-3.5 w-3.5 cursor-nwse-resize rounded-sm border-2 border-brand bg-white shadow" />}
                       </div>
@@ -472,12 +465,10 @@ export default function PdfTemplate() {
       ) : (
         <div className="space-y-5">
           <div className="card p-6"><label className="label">Company Name</label><input className="input" value={content.company_name} onChange={(e) => setContent((s) => ({ ...s, company_name: e.target.value }))} placeholder="e.g. Acme Research Pvt. Ltd." /></div>
-          {([["registration_details", "Registration Details", "SEBI registration number, validity, etc."],
-             ["disclaimer_text", "Disclaimer", "Used by the {disclaimer} field."],
-             ["disclosure_text", "Disclosure", "Used by the {disclosure} field."],
-             ["company_data", "Company Data", "Contact details (JSON) and extra footer info."]] as const).map(([k, label, help]) => (
+          {([["registration_details", "Registration Details", "SEBI registration number, validity, etc. Shown via the {registration} field."]] as const).map(([k, label, help]) => (
             <div key={k} className="card p-6"><label className="label">{label}</label><p className="mb-2 text-xs text-slate-400">{help}</p><RichTextEditor value={content[k]} onChange={(html) => setContent((s) => ({ ...s, [k]: html }))} /></div>
           ))}
+          <p className="px-1 text-xs text-slate-400">Disclaimer, disclosure and any other notices are now designed directly on the <span className="font-medium">Fixed info</span> pages using rich-text elements.</p>
         </div>
       )}
     </div>

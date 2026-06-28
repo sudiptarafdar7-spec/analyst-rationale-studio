@@ -74,14 +74,10 @@ def fetch_pdf_config(job_id, cfg: dict) -> dict:
         if tpl:
             company_name = tpl.company_name or cfg["fallback_company_name"]
             registration_details = tpl.registration_details or cfg["fallback_registration"]
-            disclaimer_text = tpl.disclaimer_text
-            disclosure_text = tpl.disclosure_text
-            company_data = tpl.company_data
             design_cfg = tpl.design or {}
         else:
             company_name = cfg["fallback_company_name"]
             registration_details = cfg["fallback_registration"]
-            disclaimer_text = disclosure_text = company_data = None
             design_cfg = {}
 
         company_logo_path = font_regular_path = font_bold_path = None
@@ -105,15 +101,7 @@ def fetch_pdf_config(job_id, cfg: dict) -> dict:
         if job.video_date:
             input_date_str = job.video_date.strftime("%Y-%m-%d") if hasattr(job.video_date, "strftime") else str(job.video_date)
 
-    # Contacts: config defaults, optionally overridden by JSON in company_data.
     contacts = cfg.get("contacts", [])
-    if company_data:
-        try:
-            parsed = json.loads(company_data)
-            if isinstance(parsed, dict) and isinstance(parsed.get("contacts"), list) and parsed["contacts"]:
-                contacts = parsed["contacts"]
-        except (ValueError, TypeError):
-            pass
 
     return {
         "channel_name": channel_name,
@@ -124,9 +112,9 @@ def fetch_pdf_config(job_id, cfg: dict) -> dict:
         "platform": platform,
         "company_name": company_name,
         "registration_details": registration_details,
-        "disclaimer_text": disclaimer_text,
+        "disclaimer_text": None,
         "design": design_cfg,
-        "disclosure_text": disclosure_text,
+        "disclosure_text": None,
         "company_logo_path": company_logo_path,
         "font_regular_path": font_regular_path,
         "font_bold_path": font_bold_path,
