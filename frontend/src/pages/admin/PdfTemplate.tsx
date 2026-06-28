@@ -15,7 +15,7 @@ interface ElStyle {
   size?: number; weight?: "normal" | "bold"; color?: string; align?: Align;
   bg?: string; borderW?: number; borderColor?: string; radius?: number;
 }
-interface Design { theme_color: string; elements: Record<string, ElStyle> }
+interface Design { theme_color: string; layout_mode?: "flow" | "absolute"; elements: Record<string, ElStyle> }
 
 interface ElDef { key: string; label: string; hasText?: boolean; hasBg?: boolean; hasBorder?: boolean; sample?: string }
 const ELEMENTS: ElDef[] = [
@@ -40,6 +40,7 @@ const ELEMENTS: ElDef[] = [
 function defaultDesign(): Design {
   return {
     theme_color: "#6C4CF1",
+    layout_mode: "flow",
     elements: {
       header: { x: 0, y: 0, w: 100, h: 9, visible: true, bg: "#6C4CF1" },
       company_name: { x: 4, y: 2, w: 55, h: 4, visible: true, text: "Acme Research Pvt. Ltd.", color: "#ffffff", size: 13.5, weight: "bold", align: "left" },
@@ -89,7 +90,7 @@ export default function PdfTemplate() {
     const d = data.design as Design | null;
     if (d && d.elements) {
       const base = defaultDesign();
-      setDesign({ theme_color: d.theme_color || base.theme_color, elements: { ...base.elements, ...d.elements } });
+      setDesign({ theme_color: d.theme_color || base.theme_color, layout_mode: d.layout_mode || "flow", elements: { ...base.elements, ...d.elements } });
     }
   }, [data]);
 
@@ -193,6 +194,16 @@ export default function PdfTemplate() {
               </div>
             </div>
             <div className="border-t border-slate-100 pt-3">
+              <label className="label">Layout mode</label>
+              <div className="flex rounded-xl border border-slate-200 p-0.5">
+                {([["flow", "Flow (auto)"], ["absolute", "Free positions"]] as const).map(([m, lbl]) => (
+                  <button key={m} onClick={() => setDesign((d) => ({ ...d, layout_mode: m }))}
+                    className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-medium ${(design.layout_mode ?? "flow") === m ? "bg-brand-50 text-brand-700" : "text-slate-500"}`}>{lbl}</button>
+                ))}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">{(design.layout_mode ?? "flow") === "absolute" ? "The PDF uses the exact X/Y/size of each element on this canvas." : "The PDF flows top-to-bottom; colours, fonts, chart & footer styling apply."}</p>
+            </div>
+            <div className="border-t border-slate-100 pt-3">
               {!sel || !meta ? (
                 <p className="text-sm text-slate-400">Select an element on the page to style it. Drag to move, use the corner handle to resize.</p>
               ) : (
@@ -245,7 +256,7 @@ export default function PdfTemplate() {
               )}
             </div>
             <button className="btn-ghost w-full" onClick={() => { setDesign(defaultDesign()); setSelected(null); }}><RotateCcw size={15} /> Reset design</button>
-            <p className="text-[11px] text-slate-400">Phase 1: colours, typography, chart border/size, footer fields, the overview heading and the sign area drive the PDF. Free positions are saved for the preview.</p>
+            <p className="text-[11px] text-slate-400">Flow mode styles the standard report. Free-positions mode renders each element at its exact place on this A4 canvas.</p>
           </div>
         </div>
       ) : (

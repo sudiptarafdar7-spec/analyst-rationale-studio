@@ -30,7 +30,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas as pdfcanvas
 from reportlab.platypus import (
-    Flowable, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+    Flowable, Frame, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 from sqlalchemy import select
 
@@ -369,6 +369,124 @@ def run(job_folder, overrides=None):
         def on_later_pages(c, d):
             draw_blue_stripe_header(c)
             draw_footer(c)
+
+        # ---- Absolute (free-form) layout: builder X/Y/W/H drive the PDF ----
+        if DESIGN.get("layout_mode") == "absolute":
+            import xml.sax.saxutils as _sx
+            theme_hex = DESIGN.get("theme_color") or cfg.get("theme_color", "#6C4CF1")
+
+            def _esc(t):
+                return _sx.escape(str(t if t is not None else ""))
+
+            def _strip_html(t):
+                t = t or ""
+                if "<" in t and ">" in t:
+                    t = " ".join(re.sub(r"<[^>]+>", " ", t).split())
+                return t
+
+            def _box(el):
+                x = _num(el.get("x"), 0) / 100.0 * PAGE_W
+                w = _num(el.get("w"), 10) / 100.0 * PAGE_W
+                h = _num(el.get("h"), 5) / 100.0 * PAGE_H
+                y_top = _num(el.get("y"), 0) / 100.0 * PAGE_H
+                return x, PAGE_H - y_top - h, w, h
+
+            def _astyle(el, dsize, dcolor, dalign, dbold):
+                sz = _num(el.get("size"), dsize)
+                return PS("abs_" + os.urandom(4).hex(), fontSize=sz, leading=sz * 1.3,
+                          textColor=_hexc(el.get("color"), dcolor),
+                          alignment=_ALIGN.get(el.get("align"), _ALIGN.get(dalign, TA_LEFT)),
+                          fontName=BASE_BLD if el.get("weight", "bold" if dbold else "normal") == "bold" else BASE_REG)
+
+            def _frame_draw(c, x, y, w, h, flowables, pad=2):
+                try:
+                    Frame(x, y, w, h, leftPadding=pad, rightPadding=pad, topPadding=pad,
+                          bottomPadding=pad, showBoundary=0).addFromList(list(flowables), c)
+                except Exception as _e:
+                    print(f"  (skip overflow element: {_e})")
+
+            def _text(c, key, text, dsize, dcolor, dalign="left", dbold=False):
+                el = _el(key)
+                if el.get("visible", True) is False or not str(text).strip():
+                    return
+                x, y, w, h = _box(el)
+                _frame_draw(c, x, y, w, h, [Paragraph(_esc(text), _astyle(el, dsize, dcolor, dalign, dbold))], pad=1)
+
+            def _flow(c, key, flowables):
+                el = _el(key)
+                if el.get("visible", True) is False or not flowables:
+                    return
+                x, y, w, h = _box(el)
+                _frame_draw(c, x, y, w, h, flowables)
+
+            def _band(c, key, default_bg):
+                el = _el(key)
+                if el.get("visible", True) is False:
+                    return
+                x, y, w, h = _box(el)
+                c.setFillColor(_hexc(el.get("bg"), default_bg))
+                c.rect(x, y, w, h, fill=1, stroke=0)
+
+            def _img(c, key, path):
+                el = _el(key)
+                if el.get("visible", True) is False or not path or not os.path.exists(path):
+                    return
+                x, y, w, h = _box(el)
+                try:
+                    c.drawImage(path, x, y, w, h, preserveAspectRatio=True, anchor="c", mask="auto")
+                except Exception:
+                    pass
+                bw = _num(el.get("borderW"), 0)
+                if bw > 0:
+                    c.setStrokeColor(_hexc(el.get("borderColor"), "#cccccc"))
+                    c.setLineWidth(bw)
+                    c.rect(x, y, w, h, fill=0, stroke=1)
+
+            c = pdfcanvas.Canvas(output_pdf, pagesize=A4)
+            reg_text = _strip_html(config.get("registration_details"))
+            for idx, (_, row) in enumerate(df.iterrows()):
+                _band(c, "header", theme_hex)
+                _text(c, "company_name", _el("company_name").get("text") or config["company_name"], 13.5, "#ffffff", "left", True)
+                _text(c, "registration", _el("registration").get("text") or reg_text, 7.5, "#ffffff", "left", False)
+                _img(c, "logo", config.get("company_logo_path"))
+                date_val = str(row.get("DATE", "") or "").strip()
+                _text(c, "date", f"Date: {date_val}" if date_val else (_el("date").get("text") or ""), 11, "#111111", "right", True)
+                listed = str(row.get("LISTED NAME", row.get("INPUT STOCK", "")) or "").strip()
+                symbol = str(row.get("STOCK SYMBOL", "") or "").strip()
+                _text(c, "title", f"{listed} ({symbol})" if symbol else listed, 16, "#111111", "left", True)
+                ch_path = str(row.get("CHART PATH", "") or "").strip()
+                if ch_path and not os.path.isabs(ch_path):
+                    ch_path = os.path.join(job_folder, ch_path)
+                _img(c, "chart", ch_path)
+                _text(c, "overview_label", _el("overview_label").get("text") or "OUR GENERAL VIEW", 11, theme_hex, "left", True)
+                _text(c, "overview_text", str(row.get("ANALYSIS", "") or "").strip(), 10.8, "#222222", "justify", False)
+                _text(c, "footer_channel", _el("footer_channel").get("text") or config["channel_name"], 9, theme_hex, "left", True)
+                _text(c, "footer_platform", _el("footer_platform").get("text") or config.get("platform", ""), 8, "#666666", "left", False)
+                if config.get("youtube_url"):
+                    _text(c, "footer_url", _el("footer_url").get("text") or config["youtube_url"], 7, "#444444", "right", False)
+                _text(c, "footer_pageno", f"Page {idx + 1}", 8.5, "#111111", "center", False)
+                c.showPage()
+
+            drew_final = False
+            if config.get("disclaimer_text"):
+                _flow(c, "disclaimer", create_html_flowables(config["disclaimer_text"], indented_body)); drew_final = True
+            if config.get("disclosure_text"):
+                _flow(c, "disclosure", create_html_flowables(config["disclosure_text"], indented_body)); drew_final = True
+            sg = _el("sign_area")
+            if sg.get("visible"):
+                x, y, w, h = _box(sg)
+                sigp = PS("abs_sig" + os.urandom(3).hex(), fontSize=_num(sg.get("size"), 10), leading=14, textColor=_hexc(sg.get("color"), "#444444"))
+                _frame_draw(c, x, y, w, h, [
+                    Paragraph(_esc(sg.get("text") or "Authorised Signatory"), sigp),
+                    Spacer(1, 24),
+                    Paragraph("_______________________________", sigp),
+                    Paragraph(_esc(sg.get("subtext") or "Signature & Date"), sigp),
+                ]); drew_final = True
+            if drew_final:
+                c.showPage()
+            c.save()
+            print(f"\u2705 PDF generated (absolute layout): {output_pdf}")
+            return {"success": True, "output_file": output_pdf}
 
         doc = SimpleDocTemplate(output_pdf, pagesize=A4, leftMargin=M_L, rightMargin=M_R,
                                 topMargin=M_T, bottomMargin=M_B, title=config["title"])
