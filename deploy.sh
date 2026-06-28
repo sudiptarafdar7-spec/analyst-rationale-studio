@@ -111,6 +111,17 @@ if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_N
 fi
 sudo -u postgres psql -v ON_ERROR_STOP=1 -c "GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};"
 
+# The app role owns the database but is NOT a superuser, so it cannot install
+# extensions and (on PostgreSQL 15+) cannot create objects in the public schema.
+# Install the extensions as the superuser and hand the public schema to the app
+# role so Alembic can create types/tables as the owner.
+sudo -u postgres psql -v ON_ERROR_STOP=1 -d "${DB_NAME}" <<SQL
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS citext;
+ALTER SCHEMA public OWNER TO ${DB_USER};
+GRANT ALL ON SCHEMA public TO ${DB_USER};
+SQL
+
 # ----------------------------------------------------------------------------- 4. .env (created once, kept on re-run)
 if [[ ! -f "${ENV_FILE}" ]]; then
   say "Writing ${ENV_FILE}"
