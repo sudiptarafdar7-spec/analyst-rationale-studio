@@ -23,7 +23,7 @@ class PdfTemplateOut(BaseModel):
 
 
 class PdfTemplateUpsert(BaseModel):
-    company_name: str = Field(min_length=1, max_length=300)
+    company_name: str = Field(default="", max_length=300)
     registration_details: str | None = None  # rich HTML
     disclaimer_text: str | None = None
     disclosure_text: str | None = None

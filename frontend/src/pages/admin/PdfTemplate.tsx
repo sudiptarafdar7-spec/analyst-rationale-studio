@@ -14,10 +14,11 @@ interface El {
   id: string; type: ElType; x: number; y: number; w: number; h: number;
   visible?: boolean; text?: string; field?: string;
   size?: number; weight?: "normal" | "bold"; color?: string; align?: Align;
-  bg?: string; borderW?: number; borderColor?: string; radius?: number;
+  bg?: string; borderW?: number; borderColor?: string; radius?: number; pad?: number;
 }
 interface Page { id: string; bg?: string; elements: El[] }
 interface Design { theme_color: string; stock_pages: Page[]; fixed_pages: Page[] }
+interface SampleData { company_name: string; registration: string; disclaimer: string; disclosure: string; channel: string; platform: string; url: string; stock: { stock_name: string; stock_symbol: string; short_name: string; date: string; analysis: string; chart: string | null } | null }
 
 // Dynamic fields from the pipeline / template.
 const TEXT_FIELDS: { key: string; label: string; sample: string; stockOnly?: boolean; multiline?: boolean }[] = [
@@ -94,6 +95,9 @@ export default function PdfTemplate() {
   const [content, setContent] = useState({ company_name: "", registration_details: "", disclaimer_text: "", disclosure_text: "", company_data: "" });
   const drag = useRef<{ id: string; mode: "move" | "resize"; sx: number; sy: number; o: El } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
+  const sampleQ = useQuery({ queryKey: ["pdf-sample"], queryFn: () => api.get<SampleData>("/admin/pdf-template/sample") });
+  const sample = sampleQ.data;
 
   useEffect(() => {
     if (!data) return;
@@ -114,6 +118,7 @@ export default function PdfTemplate() {
   const pages = section === "stock" ? design.stock_pages : design.fixed_pages;
   const safeIdx = Math.min(pageIdx, Math.max(0, pages.length - 1));
   const page: Page | undefined = pages[safeIdx];
+  const pageRef = useRef<Page | undefined>(page); pageRef.current = page;
   const sel = page?.elements.find((e) => e.id === selId) ?? null;
 
   const setPages = (fn: (p: Page[]) => Page[]) =>
@@ -123,7 +128,7 @@ export default function PdfTemplate() {
   const delEl = (id: string) => { setPages((ps) => ps.map((p, i) => (i === safeIdx ? { ...p, elements: p.elements.filter((e) => e.id !== id) } : p))); setSelId(null); };
   const addEl = (type: ElType) => {
     const base: El = { id: uid(), type, x: 30, y: 42, w: 40, h: 6, visible: true, color: "#111111", align: "left",
-      size: type === "heading" ? 16 : 11, weight: type === "heading" ? "bold" : "normal" };
+      size: type === "heading" ? 16 : 11, weight: type === "heading" ? "bold" : "normal", pad: type === "box" || type === "image" ? 0 : 2 };
     if (type === "field") base.field = section === "stock" ? "stock_name" : "company_name";
     if (type === "image") { base.field = section === "stock" ? "chart" : "logo"; base.h = 24; }
     if (type === "box") { base.bg = design.theme_color; base.color = undefined; }
@@ -140,10 +145,19 @@ export default function PdfTemplate() {
       const g = drag.current; if (!g || !canvasRef.current) return;
       const r = canvasRef.current.getBoundingClientRect();
       const dx = ((e.clientX - g.sx) / r.width) * 100, dy = ((e.clientY - g.sy) / r.height) * 100;
-      if (g.mode === "move") patchEl(g.id, { x: clamp(g.o.x + dx, 0, 100 - g.o.w), y: clamp(g.o.y + dy, 0, 100 - g.o.h) });
-      else patchEl(g.id, { w: clamp(g.o.w + dx, 4, 100 - g.o.x), h: clamp(g.o.h + dy, 2, 100 - g.o.y) });
+      if (g.mode === "move") {
+        let nx = clamp(g.o.x + dx, 0, 100 - g.o.w), ny = clamp(g.o.y + dy, 0, 100 - g.o.h);
+        const others = (pageRef.current?.elements ?? []).filter((el) => el.id !== g.id && el.visible !== false);
+        const vc = [0, 50, 100], hc = [0, 50, 100];
+        others.forEach((el) => { vc.push(el.x, el.x + el.w / 2, el.x + el.w); hc.push(el.y, el.y + el.h / 2, el.y + el.h); });
+        const TH = 1.0; const gv: number[] = [], gh: number[] = [];
+        let sx = false; for (const c of vc) { if (sx) break; for (const a of [nx, nx + g.o.w / 2, nx + g.o.w]) { if (Math.abs(a - c) <= TH) { nx += c - a; gv.push(c); sx = true; break; } } }
+        let sy = false; for (const c of hc) { if (sy) break; for (const a of [ny, ny + g.o.h / 2, ny + g.o.h]) { if (Math.abs(a - c) <= TH) { ny += c - a; gh.push(c); sy = true; break; } } }
+        nx = clamp(nx, 0, 100 - g.o.w); ny = clamp(ny, 0, 100 - g.o.h);
+        patchEl(g.id, { x: nx, y: ny }); setGuides({ v: gv, h: gh });
+      } else patchEl(g.id, { w: clamp(g.o.w + dx, 4, 100 - g.o.x), h: clamp(g.o.h + dy, 2, 100 - g.o.y) });
     };
-    const up = () => { drag.current = null; };
+    const up = () => { drag.current = null; setGuides({ v: [], h: [] }); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
     return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
   }, [safeIdx, section]);
@@ -157,6 +171,15 @@ export default function PdfTemplate() {
   const selMeta = useMemo(() => (sel ? { isText: sel.type === "text" || sel.type === "heading" || sel.type === "field", isField: sel.type === "field", isImage: sel.type === "image", isBox: sel.type === "box" } : null), [sel]);
   const fieldOpts = section === "stock" ? TEXT_FIELDS : TEXT_FIELDS.filter((f) => !f.stockOnly);
   const imgOpts = section === "stock" ? IMAGE_FIELDS : IMAGE_FIELDS.filter((f) => !f.stockOnly);
+  const stripTags = (t: string) => t.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const previewText = (el: El): string => {
+    if (el.type !== "field") return el.text ?? "";
+    const k = el.field;
+    if (k && ["stock_name", "stock_symbol", "short_name", "date", "analysis"].includes(k)) return (sample?.stock?.[k as keyof NonNullable<SampleData["stock"]>] as string) || fieldSample(k);
+    if (k && ["company_name", "registration", "channel", "platform", "url"].includes(k)) return (sample?.[k as keyof SampleData] as string) || fieldSample(k);
+    if (k === "disclaimer" || k === "disclosure") return stripTags((sample?.[k] as string) || fieldSample(k));
+    return fieldSample(k);
+  };
 
   return (
     <div className="space-y-5">
@@ -214,7 +237,7 @@ export default function PdfTemplate() {
                     if (el.visible === false) return null;
                     const isSel = selId === el.id;
                     const isImg = el.type === "image", isBox = el.type === "box";
-                    const label = el.type === "field" ? fieldSample(el.field) : isImg ? `🖼 ${el.field}` : el.text ?? "";
+                    const label = el.type === "field" ? previewText(el) : isImg ? `🖼 ${el.field}` : el.text ?? "";
                     return (
                       <div key={el.id} onPointerDown={(e) => { e.stopPropagation(); setSelId(el.id); drag.current = { id: el.id, mode: "move", sx: e.clientX, sy: e.clientY, o: el }; }}
                         className={`absolute cursor-move overflow-hidden ${isSel ? "outline outline-2 outline-brand" : "hover:outline hover:outline-1 hover:outline-brand/40"}`}
@@ -226,14 +249,18 @@ export default function PdfTemplate() {
                           color: el.color, fontSize: (el.size ?? 10) * PT, fontWeight: el.weight === "bold" ? 700 : 400,
                           display: "flex", alignItems: isImg ? "center" : "flex-start",
                           justifyContent: isImg ? "center" : el.align === "center" ? "center" : el.align === "right" ? "flex-end" : "flex-start",
-                          padding: "1px 3px", lineHeight: 1.25,
+                          padding: `${Math.max(0, el.pad ?? 2) * PT}px`, lineHeight: 1.25,
                           textAlign: (el.align === "justify" ? "left" : el.align) as React.CSSProperties["textAlign"],
                         }}>
-                        <span className="pointer-events-none block w-full" style={{ whiteSpace: el.field === "analysis" || el.field === "disclaimer" || el.field === "disclosure" ? "normal" : "nowrap", overflow: "hidden", color: isBox ? "rgba(255,255,255,.85)" : undefined }}>{label}</span>
+                        {isImg && el.field === "chart" && sample?.stock?.chart
+                          ? <img src={sample.stock.chart} alt="" className="pointer-events-none h-full w-full object-contain" />
+                          : <span className="pointer-events-none block w-full" style={{ whiteSpace: el.field === "analysis" || el.field === "disclaimer" || el.field === "disclosure" ? "normal" : "nowrap", overflow: "hidden", color: isBox ? "rgba(255,255,255,.85)" : undefined }}>{label}</span>}
                         {isSel && <span onPointerDown={(e) => { e.stopPropagation(); drag.current = { id: el.id, mode: "resize", sx: e.clientX, sy: e.clientY, o: el }; }} className="absolute bottom-0 right-0 h-3 w-3 cursor-nwse-resize bg-brand" style={{ borderRadius: 2 }} />}
                       </div>
                     );
                   })}
+                  {guides.v.map((gx, i) => <div key={"v" + i} className="pointer-events-none absolute bottom-0 top-0 w-px bg-brand/70" style={{ left: `${gx}%` }} />)}
+                  {guides.h.map((gy, i) => <div key={"h" + i} className="pointer-events-none absolute left-0 right-0 h-px bg-brand/70" style={{ top: `${gy}%` }} />)}
                 </div>
               )}
             </div>
@@ -295,9 +322,10 @@ export default function PdfTemplate() {
                       </>
                     )}
                     <div><label className="label">Background</label><div className="flex gap-2"><input type="color" className="h-9 w-full cursor-pointer rounded border border-slate-200" value={sel.bg ?? "#ffffff"} onChange={(e) => patchEl(sel.id, { bg: e.target.value })} /><button className="btn-ghost h-9 px-2 text-xs" onClick={() => patchEl(sel.id, { bg: undefined })}>None</button></div></div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-4 gap-2">
+                      <div><label className="label">Pad</label><input type="number" className="input h-9" value={sel.pad ?? 2} onChange={(e) => patchEl(sel.id, { pad: Number(e.target.value) })} /></div>
                       <div><label className="label">Border</label><input type="number" className="input h-9" value={sel.borderW ?? 0} onChange={(e) => patchEl(sel.id, { borderW: Number(e.target.value) })} /></div>
-                      <div><label className="label">Colour</label><input type="color" className="h-9 w-full cursor-pointer rounded border border-slate-200" value={sel.borderColor ?? "#cccccc"} onChange={(e) => patchEl(sel.id, { borderColor: e.target.value })} /></div>
+                      <div><label className="label">B.colour</label><input type="color" className="h-9 w-full cursor-pointer rounded border border-slate-200" value={sel.borderColor ?? "#cccccc"} onChange={(e) => patchEl(sel.id, { borderColor: e.target.value })} /></div>
                       <div><label className="label">Radius</label><input type="number" className="input h-9" value={sel.radius ?? 0} onChange={(e) => patchEl(sel.id, { radius: Number(e.target.value) })} /></div>
                     </div>
                   </div>

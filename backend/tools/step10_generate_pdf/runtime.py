@@ -170,6 +170,10 @@ def run(job_folder, overrides=None):
 
         config = fetch_pdf_config(job_id, cfg)
         print(f"✅ Platform: {config['channel_name']} | Report: {config['title']}")
+        _dbg = config.get("design") or {}
+        _path = ("page-builder" if (_dbg.get("stock_pages") or _dbg.get("fixed_pages"))
+                 else "absolute" if _dbg.get("layout_mode") == "absolute" else "flow")
+        print(f"🎨 PDF design: {_path} (stock_pages={len(_dbg.get('stock_pages') or [])}, fixed_pages={len(_dbg.get('fixed_pages') or [])})")
 
         input_date = config.get("input_date", "")
         try:
@@ -430,6 +434,7 @@ def run(job_folder, overrides=None):
                     return
                 typ = el.get("type", "text")
                 x, y, w, h = _box(el)
+                pad = max(0.0, _num(el.get("pad"), 2))
                 # background / border for any element
                 if el.get("bg"):
                     c.setFillColor(_hexc(el.get("bg"), "#ffffff"))
@@ -459,7 +464,7 @@ def run(job_folder, overrides=None):
                 if typ == "field" and key in ("disclaimer", "disclosure"):
                     html = config.get(f"{key}_text")
                     if html:
-                        _frame(c, x, y, w, h, create_html_flowables(html, indented_body))
+                        _frame(c, x, y, w, h, create_html_flowables(html, indented_body), pad=pad)
                     return
                 if typ == "field" and key == "page_no":
                     text = f"Page {pageno}"
@@ -475,7 +480,7 @@ def run(job_folder, overrides=None):
                            textColor=_hexc(el.get("color"), "#111111"),
                            alignment=_ALIGN.get(el.get("align"), TA_LEFT),
                            fontName=BASE_BLD if el.get("weight", "bold" if typ == "heading" else "normal") == "bold" else BASE_REG)
-                _frame(c, x, y, w, h, [Paragraph(_esc(text), style)], pad=1)
+                _frame(c, x, y, w, h, [Paragraph(_esc(text), style)], pad=pad)
 
             def _draw_page(c, pg, row, pageno):
                 if pg.get("bg"):
