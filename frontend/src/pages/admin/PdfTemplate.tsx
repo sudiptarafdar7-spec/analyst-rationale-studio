@@ -258,11 +258,11 @@ export default function PdfTemplate() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-slate-200">|</span>
                 <label className="text-xs text-slate-400">Purpose</label>
-                <select className="input h-8 w-52 text-xs" value={purposeValue(page)} onChange={(e) => { const [k, w] = e.target.value.split(":"); setPagePurpose(safeIdx, k as PageKind, (w || undefined) as PageWhen | undefined); }}>
-                  <option value="stock:first">Stock — first stock (with header)</option>
-                  <option value="stock:rest">Stock — other stocks (no header)</option>
-                  <option value="stock:all">Stock — every stock</option>
-                  <option value="fixed:">Fixed info — after the stocks</option>
+                <select className="input h-8 w-60 pr-7 text-xs" value={purposeValue(page)} onChange={(e) => { const [k, w] = e.target.value.split(":"); setPagePurpose(safeIdx, k as PageKind, (w || undefined) as PageWhen | undefined); }}>
+                  <option value="stock:first">Stock · first stock (header)</option>
+                  <option value="stock:rest">Stock · other stocks (no header)</option>
+                  <option value="stock:all">Stock · every stock</option>
+                  <option value="fixed:">Fixed info (after stocks)</option>
                 </select>
                 <button onClick={() => dupPage(safeIdx)} title="Duplicate this page" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:border-brand hover:text-brand"><Copy size={12} /> Duplicate</button>
                 {pages.length > 1 && <button onClick={() => delPage(safeIdx)} title="Delete page" className="grid h-7 w-7 place-items-center rounded-lg border border-slate-200 text-slate-400 hover:border-danger hover:text-danger"><Trash2 size={12} /></button>}
