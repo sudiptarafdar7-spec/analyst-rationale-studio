@@ -166,6 +166,19 @@ python3 -m venv "${APP_DIR}/.venv"
 say "Initialising database schema"
 ( cd "${APP_DIR}/backend" && "${APP_DIR}/.venv/bin/python" -c "import main; main._ensure_db_schema()" )
 
+# Fail loudly here (not later at seed) if the schema did not build.
+say "Verifying schema"
+( cd "${APP_DIR}/backend" && "${APP_DIR}/.venv/bin/python" - <<'PYCHECK'
+from sqlalchemy import inspect
+from db.session import engine
+insp = inspect(engine)
+missing = [t for t in ("users", "jobs", "pdf_template") if not insp.has_table(t)]
+if missing:
+    raise SystemExit(f"Schema init failed - missing tables: {missing}")
+print("Schema verified: core tables present")
+PYCHECK
+)
+
 say "Seeding admin user (${ADMIN_EMAIL})"
 ( cd "${APP_DIR}/backend" && "${APP_DIR}/.venv/bin/python" -m scripts.seed )
 

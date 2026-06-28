@@ -65,44 +65,55 @@ def _ensure_db_schema() -> None:
 
     try:
         from sqlalchemy import text
+        from sqlalchemy.dialects import postgresql
 
         from db.base import Base
+        from db.enums import ENUM_LABELS
         from db.session import engine
         import db.models  # noqa: F401  (registers tables)
 
-        # Enum changes can't be applied by create_all; do them idempotently first
-        # so watchlist_calls (and the ai_task 'watchlist' mapping) can be built.
+        # 1) Extensions the schema depends on (gen_random_uuid, citext). On a
+        #    fresh DB these are pre-installed by deploy.sh as the superuser;
+        #    IF NOT EXISTS makes this a harmless no-op when they already exist.
         with engine.begin() as conn:
-            conn.execute(text(
-                "DO $$ BEGIN "
-                "IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'call_type') THEN "
-                "CREATE TYPE call_type AS ENUM ('buy', 'hold', 'sell', 'no_view'); "
-                "END IF; END $$;"
-            ))
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TYPE ai_task ADD VALUE IF NOT EXISTS 'watchlist'"))
-        with engine.begin() as conn:
-            conn.execute(text(
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions jsonb NOT NULL DEFAULT '[]'::jsonb"
-            ))
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'reviewer'"))
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TYPE job_status ADD VALUE IF NOT EXISTS 'signed'"))
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS signed_pdf_path text"))
-            conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS signed_at timestamptz"))
-            conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS signed_by uuid"))
-            conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS raw_cleaned boolean NOT NULL DEFAULT false"))
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE pdf_template ADD COLUMN IF NOT EXISTS design jsonb"))
-            for _col in ("disclaimer_text", "disclosure_text", "company_data"):
-                conn.execute(text(f"ALTER TABLE pdf_template DROP COLUMN IF EXISTS {_col}"))
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto"))
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS citext"))
 
-        Base.metadata.create_all(bind=engine)  # creates only missing tables
+        # 2) Enum types. The ORM declares them with create_type=False, so
+        #    create_all() will NOT create them — make every type explicitly
+        #    (checkfirst skips any that already exist). MUST happen before
+        #    create_all(), otherwise CREATE TABLE on a fresh DB fails.
+        with engine.begin() as conn:
+            for _name, _labels in ENUM_LABELS.items():
+                postgresql.ENUM(*_labels, name=_name, create_type=False).create(conn, checkfirst=True)
 
-        # One-time permission backfill: only if nobody has permissions yet, so
-        # admin's later edits are never overwritten on subsequent boots.
+        # 3) Tables (only the missing ones).
+        Base.metadata.create_all(bind=engine)
+
+        # 4) Idempotent column / enum-value additions for databases created by
+        #    an older build. Each guarded independently so one failure can't
+        #    abort the rest; all are no-ops on a freshly created schema.
+        def _try(sql: str) -> None:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(sql))
+            except Exception as _e:  # noqa: BLE001
+                print(f"   (skip) {sql[:60]}... -> {_e}")
+
+        _try("ALTER TYPE ai_task ADD VALUE IF NOT EXISTS 'watchlist'")
+        _try("ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'reviewer'")
+        _try("ALTER TYPE job_status ADD VALUE IF NOT EXISTS 'signed'")
+        _try("ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions jsonb NOT NULL DEFAULT '[]'::jsonb")
+        _try("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS signed_pdf_path text")
+        _try("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS signed_at timestamptz")
+        _try("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS signed_by uuid")
+        _try("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS raw_cleaned boolean NOT NULL DEFAULT false")
+        _try("ALTER TABLE pdf_template ADD COLUMN IF NOT EXISTS design jsonb")
+        for _col in ("disclaimer_text", "disclosure_text", "company_data"):
+            _try(f"ALTER TABLE pdf_template DROP COLUMN IF EXISTS {_col}")
+
+        # 5) One-time permission backfill: only if nobody has permissions yet, so
+        #    admin's later edits are never overwritten on subsequent boots.
         with engine.begin() as conn:
             granted = conn.execute(text(
                 "SELECT count(*) FROM users WHERE permissions <> '[]'::jsonb"
@@ -113,9 +124,9 @@ def _ensure_db_schema() -> None:
                        '"watchlist:refresh","watchlist:delete","jobs:view_all"]')
                 conn.execute(text("UPDATE users SET permissions = '[\"*\"]'::jsonb WHERE role = 'admin'"))
                 conn.execute(text(f"UPDATE users SET permissions = '{emp}'::jsonb WHERE role = 'employee'"))
-        print("✅ Ensured database tables via metadata")
+        print("\u2705 Ensured database tables via metadata")
     except Exception as exc:  # noqa: BLE001
-        print(f"⚠️  Could not ensure DB schema automatically: {exc}")
+        print(f"\u26a0\ufe0f  Could not ensure DB schema automatically: {exc}")
 
 
 @app.on_event("startup")
