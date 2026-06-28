@@ -13,7 +13,7 @@ interface Job {
   id: string; title: string | null; platform_name: string | null; platform_logo: string | null;
   analysts: AnalystRef[]; video_date: string | null; signed_at: string | null;
 }
-interface Facets { platforms: { value: string; label: string }[]; channels: { id: string; name: string; platform_type: string }[]; analysts: { id: string; name: string }[]; years: number[] }
+interface Facets { platforms: { value: string; label: string }[]; channels: { id: string; name: string; platform_type: string }[]; analysts: { id: string; name: string }[]; years: number[]; dates: string[] }
 interface ListOut { items: Job[]; total: number; facets: Facets }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -33,9 +33,13 @@ export default function SignedRationale() {
 
   const list = useQuery({ queryKey: ["signed", qs], queryFn: () => api.get<ListOut>(`/review/signed${qs ? `?${qs}` : ""}`) });
   const jobs = list.data?.items ?? [];
-  const facets = list.data?.facets ?? { platforms: [], channels: [], analysts: [], years: [] };
+  const facets = list.data?.facets ?? { platforms: [], channels: [], analysts: [], years: [], dates: [] };
   const dirty = Object.values(f).some(Boolean);
   const visibleChannels = facets.channels.filter((c) => !f.platform_type || c.platform_type === f.platform_type);
+  const parsedDates = facets.dates.map((d) => d.split("-").map(Number)).filter((p) => p.length === 3);
+  const availYears = Array.from(new Set(parsedDates.map((p) => p[0]))).sort((a, b) => b - a);
+  const availMonths = Array.from(new Set(parsedDates.filter((p) => !f.year || p[0] === +f.year).map((p) => p[1]))).sort((a, b) => a - b);
+  const availDays = Array.from(new Set(parsedDates.filter((p) => (!f.year || p[0] === +f.year) && (!f.month || p[1] === +f.month)).map((p) => p[2]))).sort((a, b) => a - b);
 
   const del = useMutation({
     mutationFn: (id: string) => api.del(`/jobs/${id}`),
@@ -83,16 +87,16 @@ export default function SignedRationale() {
             <option value="">All</option>{facets.analysts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select></div>
         <div><label className="label">Year</label>
-          <select className="input h-9 w-24" value={f.year} onChange={sel("year")}>
-            <option value="">All</option>{facets.years.map((y) => <option key={y} value={y}>{y}</option>)}
+          <select className="input h-9 w-24" value={f.year} onChange={(e) => setF((s) => ({ ...s, year: e.target.value, month: "", day: "" }))}>
+            <option value="">All</option>{availYears.map((y) => <option key={y} value={y}>{y}</option>)}
           </select></div>
         <div><label className="label">Month</label>
-          <select className="input h-9 w-28" value={f.month} onChange={sel("month")}>
-            <option value="">All</option>{MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+          <select className="input h-9 w-28" value={f.month} onChange={(e) => setF((s) => ({ ...s, month: e.target.value, day: "" }))} disabled={availMonths.length === 0}>
+            <option value="">All</option>{availMonths.map((m) => <option key={m} value={m}>{MONTHS[m - 1]}</option>)}
           </select></div>
         <div><label className="label">Day</label>
-          <select className="input h-9 w-20" value={f.day} onChange={sel("day")}>
-            <option value="">All</option>{Array.from({ length: 31 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
+          <select className="input h-9 w-20" value={f.day} onChange={sel("day")} disabled={availDays.length === 0}>
+            <option value="">All</option>{availDays.map((d) => <option key={d} value={d}>{d}</option>)}
           </select></div>
         {dirty && <button className="btn-ghost h-9" onClick={() => setF({ platform_type: "", channel_id: "", analyst_id: "", year: "", month: "", day: "", q: "" })}><X size={14} /> Clear</button>}
       </div>

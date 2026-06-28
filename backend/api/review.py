@@ -34,6 +34,7 @@ class SignedFacets(BaseModel):
     channels: list[dict] = []
     analysts: list[dict] = []
     years: list[int] = []
+    dates: list[str] = []
 
 
 class SignedListOut(BaseModel):
@@ -97,6 +98,7 @@ def list_signed(
     ]
     facet_analysts = [{"id": str(a.id), "name": a.name} for a in analysts.values()]
     facet_years = sorted({_date(j).year for j in jobs if _date(j)}, reverse=True)
+    facet_dates = [_date(j).date().isoformat() for j in jobs if _date(j)]
 
     # Apply filters.
     def keep(j: Job) -> bool:
@@ -125,7 +127,7 @@ def list_signed(
     return SignedListOut(
         items=[_to_list_item(db, j) for j in filtered],
         total=len(filtered),
-        facets=SignedFacets(platforms=facet_platforms, channels=facet_channels, analysts=facet_analysts, years=facet_years),
+        facets=SignedFacets(platforms=facet_platforms, channels=facet_channels, analysts=facet_analysts, years=facet_years, dates=facet_dates),
     )
 
 
