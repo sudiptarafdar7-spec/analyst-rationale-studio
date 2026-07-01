@@ -351,13 +351,86 @@ function ArtifactPreview({ jobId, step, stepStatus }: { jobId: string; step: num
 }
 
 /* ----------------------------- extract gate ----------------------------- */
+// Pixel position of the caret inside a <textarea> (mirror-div technique).
+function caretCoords(ta: HTMLTextAreaElement, pos: number): { left: number; top: number; lh: number } {
+  const style = getComputedStyle(ta);
+  const div = document.createElement("div");
+  const props = ["boxSizing", "width", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+    "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth", "fontStyle",
+    "fontVariant", "fontWeight", "fontStretch", "fontSize", "lineHeight", "fontFamily", "textAlign",
+    "textTransform", "textIndent", "letterSpacing", "wordSpacing"];
+  props.forEach((pr) => { (div.style as unknown as Record<string, string>)[pr] = (style as unknown as Record<string, string>)[pr]; });
+  div.style.position = "absolute"; div.style.visibility = "hidden";
+  div.style.whiteSpace = "pre-wrap"; div.style.wordWrap = "break-word";
+  div.style.width = ta.clientWidth + "px";
+  div.textContent = ta.value.substring(0, pos);
+  const span = document.createElement("span");
+  span.textContent = ta.value.substring(pos) || ".";
+  div.appendChild(span);
+  document.body.appendChild(div);
+  const spanTop = span.offsetTop, spanLeft = span.offsetLeft;
+  document.body.removeChild(div);
+  const rect = ta.getBoundingClientRect();
+  const lh = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.4;
+  return { left: rect.left + spanLeft - ta.scrollLeft, top: rect.top + spanTop - ta.scrollTop, lh };
+}
+
 function ExtractGate({ jobId, onDone, reedit = false }: { jobId: string; onDone: () => void; reedit?: boolean }) {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const [sugg, setSugg] = useState<MasterHit[]>([]);
+  const [suggPos, setSuggPos] = useState<{ left: number; top: number } | null>(null);
+  const lineRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
+  const tRef = useRef<number | undefined>(undefined);
+
   useEffect(() => {
     api.get<{ text: string }>(`/jobs/${jobId}/review/extract`).then((r) => setText(r.text)).catch(() => toast.error("Could not load extracted text")).finally(() => setLoading(false));
   }, [jobId]);
+
+  const closeSugg = () => { setSugg([]); setSuggPos(null); };
+
+  // Whenever the caret moves / text changes, decide if the current line looks
+  // like a stock heading and, if so, search the scrip master for suggestions.
+  const evaluate = () => {
+    const ta = taRef.current;
+    if (!ta) return;
+    const caret = ta.selectionStart;
+    const val = ta.value;
+    const start = val.lastIndexOf("\n", caret - 1) + 1;
+    const nl = val.indexOf("\n", caret);
+    const end = nl === -1 ? val.length : nl;
+    lineRef.current = { start, end };
+    const lineText = val.slice(start, end).trim();
+    const words = lineText.split(/\s+/).filter(Boolean).length;
+    const looksHeading = lineText.length >= 1 && lineText.length <= 50 && words <= 6 && !lineText.includes(".");
+    window.clearTimeout(tRef.current);
+    if (!looksHeading) { closeSugg(); return; }
+    tRef.current = window.setTimeout(async () => {
+      try {
+        const r = await api.get<MasterHit[]>(`/tools/master-search?q=${encodeURIComponent(lineText)}&limit=8`);
+        if (r.length) { setSugg(r); setSuggPos(caretCoords(ta, caret)); }
+        else closeSugg();
+      } catch { closeSugg(); }
+    }, 220);
+  };
+
+  const pick = (h: MasterHit) => {
+    const ta = taRef.current;
+    if (!ta) return;
+    const { start, end } = lineRef.current;
+    const insert = h.symbol;
+    const next = text.slice(0, start) + insert + text.slice(end);
+    setText(next);
+    closeSugg();
+    requestAnimationFrame(() => {
+      ta.focus();
+      const c = start + insert.length;
+      ta.setSelectionRange(c, c);
+    });
+  };
+
   const submit = async () => {
     setSaving(true);
     try {
@@ -366,12 +439,36 @@ function ExtractGate({ jobId, onDone, reedit = false }: { jobId: string; onDone:
       setTimeout(onDone, 400);
     } catch (e) { toast.error(e instanceof ApiError ? e.message : "Save failed"); } finally { setSaving(false); }
   };
+
   return (
     <div className={`card p-5 ${reedit ? "border-brand/30" : "border-amber-200"}`}>
       <GateHeader title={reedit ? "Reviewed — Extract analysis" : "Review extracted stock calls"}
-        hint={reedit ? "Edit this already-reviewed file for small fixes (no AI re-generation). Saving re-runs every later step and rebuilds their output." : "Each stock on its own line, followed by its analysis. Edit freely — this is what the rest of the pipeline parses."} />
+        hint={reedit ? "Edit this already-reviewed file for small fixes (no AI re-generation). Saving re-runs every later step and rebuilds their output. Tip: type a stock name on its line to pick the exact scrip." : "Each stock on its own line, followed by its analysis. Type a stock name on its line to pick the exact scrip from the master — this is what the rest of the pipeline parses."} />
       {loading ? <Loader2 className="animate-spin text-slate-300" /> : (
-        <textarea className="input mt-3 h-[60vh] w-full font-mono text-sm" value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
+        <textarea
+          ref={taRef}
+          className="input mt-3 h-[60vh] w-full font-mono text-sm"
+          value={text}
+          spellCheck={false}
+          onChange={(e) => { setText(e.target.value); evaluate(); }}
+          onKeyUp={(e) => { if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) evaluate(); if (e.key === "Escape") closeSugg(); }}
+          onClick={evaluate}
+          onScroll={closeSugg}
+          onBlur={() => setTimeout(closeSugg, 150)}
+        />
+      )}
+      {suggPos && sugg.length > 0 && (
+        <div style={{ position: "fixed", left: suggPos.left, top: suggPos.top + 18, width: 320 }}
+          className="z-50 max-h-64 overflow-auto rounded-xl border border-slate-200 bg-white py-1 text-left shadow-xl">
+          <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Pick a stock from the master</div>
+          {sugg.map((h, k) => (
+            <button key={k} type="button" onMouseDown={(e) => { e.preventDefault(); pick(h); }}
+              className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-slate-50">
+              <span className="min-w-0 truncate"><span className="font-semibold text-slate-700">{h.symbol}</span> <span className="text-slate-400">{h.listed_name}</span></span>
+              <span className="shrink-0 text-[10px] text-slate-400">{h.exchange} · {h.security_id}</span>
+            </button>
+          ))}
+        </div>
       )}
       <div className="mt-4 flex justify-end">
         <button className="btn-primary" disabled={saving || loading} onClick={submit}>{saving && <Loader2 size={16} className="animate-spin" />} {reedit ? "Save & start from here" : "Save & Continue"} <ChevronRight size={16} /></button>
