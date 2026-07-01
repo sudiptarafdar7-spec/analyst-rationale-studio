@@ -142,6 +142,14 @@ export default function WorkPage() {
   if (!data) return <div className="card p-8 text-center text-slate-500">Job not found. <Link className="text-brand" to="/ai-rationale">Back</Link></div>;
 
   const gateStep = data.gate !== "none" ? GATE_STEP[data.gate] : null;
+  // Revisiting a passed review gate (step 4 or 7): offer an inline re-edit of the
+  // already-reviewed file (no AI re-generation) that re-runs everything after it.
+  const liveGate = data.status === "paused_review" && gateStep === activeStep;
+  const reeditStep =
+    (activeStep === 4 || activeStep === 7) &&
+    stepMap.get(activeStep)?.status === "done" &&
+    !liveGate && data.status !== "signed" && data.status !== "running"
+      ? activeStep : null;
 
   return (
     <div className="space-y-6">
@@ -237,14 +245,18 @@ export default function WorkPage() {
               onRestart={() => act(`/jobs/${jobId}/restart`, undefined, "Restarting")} />
           )}
 
-          {/* Animated per-step progress — hidden while a review gate or the
-              completion/PDF panel is showing, so there's no redundant tick. */}
-          {data.status !== "paused_review" && data.status !== "completed" && data.status !== "saved" && (
+          {/* Re-edit a previously reviewed gate file (step 4 / 7) and re-run downstream. */}
+          {reeditStep === 4 && <ExtractGate jobId={jobId} reedit onDone={refetch} />}
+          {reeditStep === 7 && <MappingGate jobId={jobId} reedit onDone={refetch} />}
+
+          {/* Animated per-step progress — hidden while a review gate, re-edit
+              panel or the completion/PDF panel is showing. */}
+          {!reeditStep && data.status !== "paused_review" && data.status !== "completed" && data.status !== "saved" && (
             <StepStage step={activeStep} status={stepMap.get(activeStep)?.status ?? "pending"} label={STEP_LABELS[activeStep]} analysts={data.analysts} />
           )}
 
-          {/* Artifact preview for the active step */}
-          <ArtifactPreview jobId={jobId} step={activeStep} stepStatus={stepMap.get(activeStep)?.status ?? "pending"} />
+          {/* Artifact preview for the active step (hidden when the re-edit panel shows). */}
+          {!reeditStep && <ArtifactPreview jobId={jobId} step={activeStep} stepStatus={stepMap.get(activeStep)?.status ?? "pending"} />}
         </div>
       </div>
 
@@ -339,7 +351,7 @@ function ArtifactPreview({ jobId, step, stepStatus }: { jobId: string; step: num
 }
 
 /* ----------------------------- extract gate ----------------------------- */
-function ExtractGate({ jobId, onDone }: { jobId: string; onDone: () => void }) {
+function ExtractGate({ jobId, onDone, reedit = false }: { jobId: string; onDone: () => void; reedit?: boolean }) {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -348,17 +360,21 @@ function ExtractGate({ jobId, onDone }: { jobId: string; onDone: () => void }) {
   }, [jobId]);
   const submit = async () => {
     setSaving(true);
-    try { await api.post(`/jobs/${jobId}/review/extract`, { text }); toast.success("Saved — resuming from step 5"); setTimeout(onDone, 400); }
-    catch (e) { toast.error(e instanceof ApiError ? e.message : "Save failed"); } finally { setSaving(false); }
+    try {
+      await api.post(`/jobs/${jobId}/review/extract${reedit ? "/reedit" : ""}`, { text });
+      toast.success(reedit ? "Saved — re-running from step 5" : "Saved — resuming from step 5");
+      setTimeout(onDone, 400);
+    } catch (e) { toast.error(e instanceof ApiError ? e.message : "Save failed"); } finally { setSaving(false); }
   };
   return (
-    <div className="card border-amber-200 p-5">
-      <GateHeader title="Review extracted stock calls" hint="Each stock on its own line, followed by its analysis. Edit freely — this is what the rest of the pipeline parses." />
+    <div className={`card p-5 ${reedit ? "border-brand/30" : "border-amber-200"}`}>
+      <GateHeader title={reedit ? "Reviewed — Extract analysis" : "Review extracted stock calls"}
+        hint={reedit ? "Edit this already-reviewed file for small fixes (no AI re-generation). Saving re-runs every later step and rebuilds their output." : "Each stock on its own line, followed by its analysis. Edit freely — this is what the rest of the pipeline parses."} />
       {loading ? <Loader2 className="animate-spin text-slate-300" /> : (
         <textarea className="input mt-3 h-[60vh] w-full font-mono text-sm" value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
       )}
       <div className="mt-4 flex justify-end">
-        <button className="btn-primary" disabled={saving || loading} onClick={submit}>{saving && <Loader2 size={16} className="animate-spin" />} Save &amp; Continue <ChevronRight size={16} /></button>
+        <button className="btn-primary" disabled={saving || loading} onClick={submit}>{saving && <Loader2 size={16} className="animate-spin" />} {reedit ? "Save & start from here" : "Save & Continue"} <ChevronRight size={16} /></button>
       </div>
     </div>
   );
@@ -444,7 +460,7 @@ function StockSymbolCell({ value, onChange, onPick }: { value: string; onChange:
 }
 
 const MAP_COLS = ["INPUT STOCK", "STOCK SYMBOL", "SECURITY ID", "EXCHANGE", "CHART TYPE", "ANALYSIS"];
-function MappingGate({ jobId, onDone }: { jobId: string; onDone: () => void }) {
+function MappingGate({ jobId, onDone, reedit = false }: { jobId: string; onDone: () => void; reedit?: boolean }) {
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -457,12 +473,16 @@ function MappingGate({ jobId, onDone }: { jobId: string; onDone: () => void }) {
   const deleteRow = (i: number) => setRows((rs) => rs.filter((_, idx) => idx !== i));
   const submit = async () => {
     setSaving(true);
-    try { await api.post(`/jobs/${jobId}/review/mapping`, { rows }); toast.success("Saved — resuming from step 8"); setTimeout(onDone, 400); }
-    catch (e) { toast.error(e instanceof ApiError ? e.message : "Save failed"); } finally { setSaving(false); }
+    try {
+      await api.post(`/jobs/${jobId}/review/mapping${reedit ? "/reedit" : ""}`, { rows });
+      toast.success(reedit ? "Saved — re-running from step 8" : "Saved — resuming from step 8");
+      setTimeout(onDone, 400);
+    } catch (e) { toast.error(e instanceof ApiError ? e.message : "Save failed"); } finally { setSaving(false); }
   };
   return (
-    <div className="card border-amber-200 p-5">
-      <GateHeader title="Review stock mapping" hint="Unmatched rows are highlighted. In STOCK SYMBOL, type a symbol or name to search the scrip master — picking a result fills Security ID, Exchange and the names. Every field stays editable." />
+    <div className={`card p-5 ${reedit ? "border-brand/30" : "border-amber-200"}`}>
+      <GateHeader title={reedit ? "Reviewed — Map master file" : "Review stock mapping"}
+        hint={reedit ? "Edit this already-reviewed mapping for small fixes. Saving re-runs every later step and rebuilds their output." : "Unmatched rows are highlighted. In STOCK SYMBOL, type a symbol or name to search the scrip master — picking a result fills Security ID, Exchange and the names. Every field stays editable."} />
       {loading ? <Loader2 className="animate-spin text-slate-300" /> : (
         <div className="mt-3 max-h-[68vh] overflow-auto rounded-xl border border-slate-200">
           <table className="w-full border-collapse text-sm">
@@ -503,7 +523,7 @@ function MappingGate({ jobId, onDone }: { jobId: string; onDone: () => void }) {
       )}
       <div className="mt-4 flex items-center justify-between">
         <button type="button" className="btn-ghost" disabled={loading} onClick={addRow}><Plus size={16} /> Add row</button>
-        <button className="btn-primary" disabled={saving || loading} onClick={submit}>{saving && <Loader2 size={16} className="animate-spin" />} Save &amp; Continue <ChevronRight size={16} /></button>
+        <button className="btn-primary" disabled={saving || loading} onClick={submit}>{saving && <Loader2 size={16} className="animate-spin" />} {reedit ? "Save & start from here" : "Save & Continue"} <ChevronRight size={16} /></button>
       </div>
     </div>
   );

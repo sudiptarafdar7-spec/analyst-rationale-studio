@@ -85,6 +85,42 @@ def _resume(bg: BackgroundTasks, db: Session, job) -> None:
     bg.add_task(pipeline.resume, job.id)
 
 
+def _reeditable(job) -> None:
+    """A previously-reviewed gate file can be re-edited unless the pipeline is
+    actively running or the job is already signed."""
+    if job.status in (JobStatus.running, JobStatus.pending):
+        raise HTTPException(status_code=409, detail="The pipeline is running — wait for it to pause or finish before re-editing.")
+    if job.status == JobStatus.signed:
+        raise HTTPException(status_code=409, detail="A signed job can no longer be changed.")
+
+
+def _rerun_from(bg: BackgroundTasks, db: Session, job, step: int) -> None:
+    """Persist state and re-run the pipeline from `step`, discarding every later
+    step's output (run_pipeline resets steps >= step and clears their artifacts)."""
+    job.status = JobStatus.running
+    job.gate = GateKind.none
+    db.commit()
+    bg.add_task(pipeline.retry_step, job.id, step)
+
+
+def _write_mapping_csv(path: str, rows: list[dict]) -> None:
+    """Write the reviewed mapping rows back to mapped_master_file.csv, preserving
+    the original column order and unioning any new keys at the end."""
+    existing_cols, _ = _read_csv(path)
+    cols = list(existing_cols)
+    for r in rows:
+        for k in r:
+            if k not in cols:
+                cols.append(k)
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+    writer.writeheader()
+    for r in rows:
+        writer.writerow({c: r.get(c, "") for c in cols})
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        f.write(buf.getvalue())
+
+
 # --------------------------- extract gate ----------------------------------- #
 @router.get("/{job_id}/review/extract", response_model=ExtractReviewOut)
 def get_extract(job_id: uuid.UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> ExtractReviewOut:
@@ -116,6 +152,28 @@ def post_extract(
     activity.log(db, user, "rationale:review", f"Reviewed step 4 (extract) of {job.title or 'a job'}", entity_type="job", entity_id=job.id)
     _resume(bg, db, job)
     return {"status": "running", "message": "Saved edits; resuming from step 5."}
+
+
+@router.post("/{job_id}/review/extract/reedit")
+def reedit_extract(
+    job_id: uuid.UUID,
+    body: ExtractReviewIn,
+    bg: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("rationale:review")),
+) -> dict:
+    """Re-edit the already-reviewed extract (bulk-input-english.txt) AFTER the
+    gate has passed, then re-run from step 5. No GPT re-generation — the saved
+    edit is used verbatim; every later step's output is discarded and rebuilt."""
+    job = _load_owned(job_id, db, user)
+    _reeditable(job)
+    jf = _jf(job_id)
+    os.makedirs(jf, exist_ok=True)
+    with open(os.path.join(jf, "bulk-input-english.txt"), "w", encoding="utf-8") as f:
+        f.write(body.text)
+    activity.log(db, user, "rationale:review", f"Re-edited step 4 (extract) of {job.title or 'a job'}", entity_type="job", entity_id=job.id)
+    _rerun_from(bg, db, job, 5)
+    return {"status": "running", "message": "Saved edits; re-running from step 5."}
 
 
 # --------------------------- mapping gate ----------------------------------- #
@@ -152,23 +210,33 @@ def post_mapping(
         raise HTTPException(status_code=404, detail="Mapped master file not available yet.")
     if not body.rows:
         raise HTTPException(status_code=422, detail="No rows submitted.")
-    # Preserve the original column order; union any new keys at the end.
-    existing_cols, _ = _read_csv(path)
-    cols = list(existing_cols)
-    for r in body.rows:
-        for k in r:
-            if k not in cols:
-                cols.append(k)
-    buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
-    writer.writeheader()
-    for r in body.rows:
-        writer.writerow({c: r.get(c, "") for c in cols})
-    with open(path, "w", encoding="utf-8-sig", newline="") as f:
-        f.write(buf.getvalue())
+    _write_mapping_csv(path, body.rows)
     activity.log(db, user, "rationale:review", f"Reviewed step 7 (mapping) of {job.title or 'a job'}", entity_type="job", entity_id=job.id)
     _resume(bg, db, job)
     return {"status": "running", "message": "Saved mapping; resuming from step 8."}
+
+
+@router.post("/{job_id}/review/mapping/reedit")
+def reedit_mapping(
+    job_id: uuid.UUID,
+    body: MappingReviewIn,
+    bg: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_perm("rationale:review")),
+) -> dict:
+    """Re-edit the already-reviewed mapping (mapped_master_file.csv) AFTER the
+    gate has passed, then re-run from step 8. Later steps are rebuilt."""
+    job = _load_owned(job_id, db, user)
+    _reeditable(job)
+    path = os.path.join(_jf(job_id), "analysis", "mapped_master_file.csv")
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Mapped master file not available yet.")
+    if not body.rows:
+        raise HTTPException(status_code=422, detail="No rows submitted.")
+    _write_mapping_csv(path, body.rows)
+    activity.log(db, user, "rationale:review", f"Re-edited step 7 (mapping) of {job.title or 'a job'}", entity_type="job", entity_id=job.id)
+    _rerun_from(bg, db, job, 8)
+    return {"status": "running", "message": "Saved mapping; re-running from step 8."}
 
 
 # --------------------------- chart upload gate ------------------------------ #
