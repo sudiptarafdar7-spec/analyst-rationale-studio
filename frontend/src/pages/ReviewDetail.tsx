@@ -2,17 +2,41 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, CheckCircle2, Download, FileText, Loader2, PenLine, ShieldCheck, Video,
+  ArrowLeft, CalendarClock, CheckCircle2, Download, Facebook, FileText, Globe, Instagram,
+  Loader2, MessageCircle, PenLine, Send, ShieldCheck, Users, Video, Youtube,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { api } from "../lib/api";
 import { toast } from "../store/toast";
 import { useAuthStore } from "../store/auth";
 import { hasPerm } from "../lib/perms";
 import SignPanel from "../components/SignPanel";
 
+interface AnalystRef { id: string; name: string; avatar_path: string | null }
 interface JobDetail {
-  id: string; title: string | null; platform_name: string | null; youtube_url: string | null;
-  status: string; signed_at: string | null; pdf_url: string | null;
+  id: string; title: string | null; platform_name: string | null; platform_type: string | null;
+  platform_logo: string | null; youtube_url: string | null; status: string;
+  signed_at: string | null; pdf_url: string | null; video_date: string | null; video_time: string | null;
+  extract_all_stocks?: boolean; analysts?: AnalystRef[];
+}
+
+const PMETA: Record<string, { label: string; icon: LucideIcon; color: string }> = {
+  youtube: { label: "YouTube", icon: Youtube, color: "text-red-600 bg-red-50" },
+  facebook: { label: "Facebook", icon: Facebook, color: "text-blue-600 bg-blue-50" },
+  instagram: { label: "Instagram", icon: Instagram, color: "text-pink-600 bg-pink-50" },
+  telegram: { label: "Telegram", icon: Send, color: "text-sky-600 bg-sky-50" },
+  whatsapp: { label: "WhatsApp", icon: MessageCircle, color: "text-emerald-600 bg-emerald-50" },
+  other: { label: "Other", icon: Globe, color: "text-slate-600 bg-slate-100" },
+};
+
+function fmtDateTime(d: string | null, t: string | null): string {
+  if (!d) return "Date not set";
+  const date = new Date(`${d}T${t ?? "00:00:00"}`);
+  if (Number.isNaN(date.getTime())) return `${d}${t ? " " + t : ""}`;
+  return date.toLocaleString(undefined, {
+    day: "2-digit", month: "short", year: "numeric",
+    ...(t ? { hour: "2-digit", minute: "2-digit" } : {}),
+  });
 }
 
 function embedUrl(url: string | null): string | null {
@@ -94,24 +118,48 @@ export default function ReviewDetail() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <button className="btn-ghost px-2 py-2" onClick={() => navigate(-1)} aria-label="Back"><ArrowLeft size={18} /></button>
+          {(() => { const m = PMETA[data.platform_type ?? "other"] ?? PMETA.other; const PIcon = m.icon;
+            return <span title={m.label} className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${m.color}`}><PIcon size={19} /></span>; })()}
+          {data.platform_logo ? (
+            <img src={data.platform_logo} alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover ring-1 ring-slate-200" />
+          ) : (
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-sm font-semibold text-slate-500">{(data.platform_name ?? "?")[0]?.toUpperCase()}</span>
+          )}
           <div className="min-w-0">
-            <h1 className="truncate text-xl font-bold tracking-tight">{data.platform_name ?? "Rationale"}</h1>
-            <p className="truncate text-sm text-slate-500">{data.title || "Review & sign"}</p>
+            <div className="flex items-center gap-2">
+              <h1 className="truncate text-xl font-bold tracking-tight">{data.platform_name ?? "Rationale"}</h1>
+              {isSigned
+                ? <span className="shrink-0 text-sm font-semibold text-emerald-600">Signed</span>
+                : <span className="shrink-0 text-sm font-semibold text-violet-600">Pending review</span>}
+            </div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+              <span className="inline-flex items-center gap-1"><CalendarClock size={12} /> {fmtDateTime(data.video_date, data.video_time)}</span>
+              {(data.extract_all_stocks || (data.analysts?.length ?? 0) > 0) && <span className="text-slate-300">·</span>}
+              {data.extract_all_stocks ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600"><Users size={11} /> All analysts</span>
+              ) : (data.analysts ?? []).map((a) => (
+                <span key={a.id} title={a.name} className="inline-flex items-center gap-1 rounded-full bg-slate-100 py-0.5 pl-0.5 pr-2 font-medium text-slate-700">
+                  {a.avatar_path
+                    ? <img src={a.avatar_path} alt="" className="h-4 w-4 rounded-full object-cover" />
+                    : <span className="grid h-4 w-4 place-items-center rounded-full bg-brand-100 text-[8px] font-semibold text-brand-700">{a.name[0]?.toUpperCase()}</span>}
+                  <span className="max-w-[140px] truncate">{a.name}</span>
+                </span>
+              ))}
+            </div>
+            {data.title && <p className="mt-0.5 truncate text-xs text-slate-400" title={data.title}>{data.title}</p>}
           </div>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex shrink-0 items-center gap-2.5">
           {canSign && !isSigned && (
             <button className="btn-primary" onClick={() => setSignOpen(true)}><PenLine size={16} /> Sign document</button>
           )}
-          {isSigned ? (
+          {isSigned && (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-700">
               <ShieldCheck size={16} /> Signed{data.signed_at ? ` · ${new Date(data.signed_at).toLocaleString()}` : ""}
             </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1.5 text-sm font-semibold text-amber-700">Pending review</span>
           )}
         </div>
       </div>
