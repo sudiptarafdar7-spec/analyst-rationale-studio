@@ -12,6 +12,7 @@ import Modal from "../components/Modal";
 import StepStage from "../components/StepStage";
 import { useAuthStore } from "../store/auth";
 import { toast } from "../store/toast";
+import { pdfFileName } from "../lib/pdfName";
 
 type JobStatus = "pending" | "running" | "paused_review" | "completed" | "failed" | "saved" | "signed";
 type GateKind = "none" | "extract_review" | "mapping_review" | "chart_upload";
@@ -255,7 +256,7 @@ export default function WorkPage() {
 
           {/* Animated per-step progress — hidden while a review gate, re-edit
               panel or the completion/PDF panel is showing. */}
-          {!reeditStep && data.status !== "paused_review" && data.status !== "completed" && data.status !== "saved" && (
+          {!reeditStep && data.status !== "paused_review" && data.status !== "completed" && data.status !== "saved" && data.status !== "signed" && !(activeStep === 10 && stepMap.get(10)?.status === "done") && (
             <StepStage step={activeStep} status={stepMap.get(activeStep)?.status ?? "pending"} label={STEP_LABELS[activeStep]} analysts={data.analysts} />
           )}
 
@@ -713,7 +714,7 @@ function CompletionPanel({ job, saved, signed, onSaved, onDeleted }: { job: JobD
           <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <a className="btn-ghost" href={pdfUrl ?? undefined} download={pdfUrl ? `${job.title || "rationale"}${signed ? "-signed" : ""}.pdf` : undefined}><Download size={16} /> Download</a>
+          <a className="btn-ghost" href={pdfUrl ?? undefined} download={pdfUrl ? pdfFileName(job, !!signed) : undefined}><Download size={16} /> Download</a>
           {!saved && !signed && <button className="btn-primary" disabled={busy} onClick={send}><Send size={16} /> Send to reviewer</button>}
           {(saved || signed) && <Link className="btn-ghost" to={`/review/${job.id}`}><TrendingUp size={16} /> Open review</Link>}
           {!signed && <button className="btn bg-danger text-white hover:bg-danger/90" disabled={busy} onClick={del}><Trash2 size={16} /> Delete</button>}

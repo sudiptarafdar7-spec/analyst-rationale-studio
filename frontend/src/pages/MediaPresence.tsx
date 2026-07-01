@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { api, ApiError } from "../lib/api";
+import { pdfFileName } from "../lib/pdfName";
 import { useAuthStore } from "../store/auth";
 import { toast } from "../store/toast";
 import Modal from "../components/Modal";
@@ -128,7 +129,7 @@ async function downloadJobPdf(job: Job): Promise<void> {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${(job.title || job.platform_name || "rationale").replace(/[^\w.-]+/g, "_")}.pdf`;
+    a.download = pdfFileName(job, job.status === "signed");
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   } catch (e) { toast.error(e instanceof ApiError ? e.message : "Could not download PDF"); }

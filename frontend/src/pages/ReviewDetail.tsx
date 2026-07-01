@@ -11,6 +11,7 @@ import { toast } from "../store/toast";
 import { useAuthStore } from "../store/auth";
 import { hasPerm } from "../lib/perms";
 import SignPanel from "../components/SignPanel";
+import { pdfFileName } from "../lib/pdfName";
 
 interface AnalystRef { id: string; name: string; avatar_path: string | null }
 interface JobDetail {
@@ -95,12 +96,13 @@ export default function ReviewDetail() {
   }, [jobId, data, isSigned]);
 
   const download = async () => {
+    if (!data) return;
     try {
       const path = isSigned ? `/review/${jobId}/signed-pdf` : `/jobs/${jobId}/pdf`;
       const blob = await api.getBlob(path);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = `${(data?.title || "rationale").replace(/[^\w.-]+/g, "_")}${isSigned ? "-signed" : ""}.pdf`;
+      a.href = url; a.download = pdfFileName(data, isSigned);
       a.click(); URL.revokeObjectURL(url);
     } catch { toast.error("Could not download PDF"); }
   };

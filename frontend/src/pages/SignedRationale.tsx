@@ -7,6 +7,7 @@ import {
 import { api, ApiError } from "../lib/api";
 import { toast } from "../store/toast";
 import { useAuthStore } from "../store/auth";
+import { pdfFileName } from "../lib/pdfName";
 import { hasPerm } from "../lib/perms";
 import Modal from "../components/Modal";
 import SignPanel from "../components/SignPanel";
@@ -60,7 +61,7 @@ export default function SignedRationale() {
       const blob = await api.getBlob(`/review/${j.id}/signed-pdf`);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = url;
-      a.download = `${(j.title || "rationale").replace(/[^\w.-]+/g, "_")}-signed.pdf`; a.click(); URL.revokeObjectURL(url);
+      a.download = pdfFileName(j, true); a.click(); URL.revokeObjectURL(url);
     } catch { toast.error("Could not download"); }
   };
 

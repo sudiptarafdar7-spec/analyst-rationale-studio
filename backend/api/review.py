@@ -173,5 +173,8 @@ def get_signed_pdf(job_id: uuid.UUID, db: Session = Depends(get_db), user: User 
     _ensure_access(job, user)
     if not job.signed_pdf_path or not os.path.isfile(job.signed_pdf_path):
         raise HTTPException(status_code=404, detail="Signed PDF not available.")
-    fname = f"{(job.title or 'rationale').replace(' ', '_')}-signed.pdf"
+    # Reuse the generated file's channel-date-time base so the signed download is
+    # "<channel>-<date>-<time>-signed.pdf".
+    _base = os.path.splitext(os.path.basename(job.output_pdf_path))[0] if job.output_pdf_path else (job.title or "rationale").replace(" ", "_")
+    fname = f"{_base}-signed.pdf"
     return FileResponse(job.signed_pdf_path, media_type="application/pdf", filename=fname, headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})

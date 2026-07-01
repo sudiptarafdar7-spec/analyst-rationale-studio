@@ -100,6 +100,9 @@ def fetch_pdf_config(job_id, cfg: dict) -> dict:
         input_date_str = None
         if job.video_date:
             input_date_str = job.video_date.strftime("%Y-%m-%d") if hasattr(job.video_date, "strftime") else str(job.video_date)
+        input_time_str = None
+        if getattr(job, "video_time", None):
+            input_time_str = job.video_time.strftime("%H:%M") if hasattr(job.video_time, "strftime") else str(job.video_time)[:5]
 
     contacts = cfg.get("contacts", [])
 
@@ -108,6 +111,7 @@ def fetch_pdf_config(job_id, cfg: dict) -> dict:
         "channel_logo_path": channel_logo_path,
         "title": job.title or "Rationale Report",
         "input_date": input_date_str,
+        "input_time": input_time_str,
         "youtube_url": job.youtube_url or "",
         "platform": platform,
         "company_name": company_name,
@@ -169,7 +173,13 @@ def run(job_folder, overrides=None, config_override=None):
         except ValueError:
             date_str = datetime.now().strftime("%d-%m-%Y")
 
-        pdf_filename = f"{sanitize_filename(config['channel_name'])}-{date_str}.pdf"
+        input_time = (config.get("input_time") or "").strip()
+        time_file = input_time.replace(":", "-") if input_time else ""
+        # Human title shown in the PDF viewer tab; file name for downloads.
+        doc_title = " - ".join(p for p in [config.get("channel_name") or "", date_str, input_time] if p)
+        config["doc_title"] = doc_title
+        _chan = sanitize_filename(config["channel_name"])
+        pdf_filename = f"{_chan}-{date_str}{('-' + time_file) if time_file else ''}.pdf"
         output_pdf = os.path.join(job_folder, "pdf", pdf_filename)
         os.makedirs(os.path.dirname(output_pdf), exist_ok=True)
 
@@ -633,6 +643,7 @@ def run(job_folder, overrides=None, config_override=None):
                         remaining.pop(0)  # un-splittable item; drop to avoid an infinite loop
 
             c = pdfcanvas.Canvas(output_pdf, pagesize=A4)
+            c.setTitle(config.get("doc_title") or config.get("title") or "Rationale")
             pageno = 0
             unified = DESIGN.get("pages")
             if unified:
@@ -744,6 +755,7 @@ def run(job_folder, overrides=None, config_override=None):
                     c.rect(x, y, w, h, fill=0, stroke=1)
 
             c = pdfcanvas.Canvas(output_pdf, pagesize=A4)
+            c.setTitle(config.get("doc_title") or config.get("title") or "Rationale")
             reg_text = _strip_html(config.get("registration_details"))
             for idx, (_, row) in enumerate(df.iterrows()):
                 _band(c, "header", theme_hex)
@@ -790,7 +802,7 @@ def run(job_folder, overrides=None, config_override=None):
             return {"success": True, "output_file": output_pdf}
 
         doc = SimpleDocTemplate(output_pdf, pagesize=A4, leftMargin=M_L, rightMargin=M_R,
-                                topMargin=M_T, bottomMargin=M_B, title=config["title"])
+                                topMargin=M_T, bottomMargin=M_B, title=(config.get("doc_title") or config["title"]))
         story = []
 
         def positional_date_header(date_text):
