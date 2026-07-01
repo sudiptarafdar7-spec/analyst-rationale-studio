@@ -1,13 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, CheckCircle2, Download, FileText, Loader2, ShieldCheck, Upload, Video,
+  ArrowLeft, CheckCircle2, Download, FileText, Loader2, PenLine, ShieldCheck, Video,
 } from "lucide-react";
-import { api, ApiError } from "../lib/api";
+import { api } from "../lib/api";
 import { toast } from "../store/toast";
 import { useAuthStore } from "../store/auth";
 import { hasPerm } from "../lib/perms";
+import SignPanel from "../components/SignPanel";
 
 interface JobDetail {
   id: string; title: string | null; platform_name: string | null; youtube_url: string | null;
@@ -33,7 +34,6 @@ export default function ReviewDetail() {
   const qc = useQueryClient();
   const me = useAuthStore((s) => s.user);
   const canSign = hasPerm(me, "review:sign");
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const job = useQuery({ queryKey: ["job", jobId], queryFn: () => api.get<JobDetail>(`/jobs/${jobId}`) });
   const data = job.data;
@@ -41,6 +41,7 @@ export default function ReviewDetail() {
 
   const [extract, setExtract] = useState<string>("");
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [signOpen, setSignOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,11 +81,12 @@ export default function ReviewDetail() {
     } catch { toast.error("Could not download PDF"); }
   };
 
-  const sign = useMutation({
-    mutationFn: (file: File) => { const fd = new FormData(); fd.append("pdf", file); return api.postForm(`/review/${jobId}/sign`, fd); },
-    onSuccess: () => { toast.success("Signed PDF uploaded"); qc.invalidateQueries({ queryKey: ["job", jobId] }); },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : "Could not upload signed PDF"),
-  });
+  const onSigned = () => {
+    qc.invalidateQueries({ queryKey: ["job", jobId] });
+    qc.invalidateQueries({ queryKey: ["pending"] });
+    qc.invalidateQueries({ queryKey: ["signed"] });
+    navigate("/signed");
+  };
 
   if (job.isLoading) return <div className="grid h-80 place-items-center"><Loader2 className="animate-spin text-slate-300" /></div>;
   if (!data) return <div className="card p-8 text-center text-slate-500">Job not found.</div>;
@@ -100,13 +102,18 @@ export default function ReviewDetail() {
             <p className="truncate text-sm text-slate-500">{data.title || "Review & sign"}</p>
           </div>
         </div>
-        {isSigned ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-700">
-            <ShieldCheck size={16} /> Signed{data.signed_at ? ` · ${new Date(data.signed_at).toLocaleString()}` : ""}
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1.5 text-sm font-semibold text-amber-700">Pending review</span>
-        )}
+        <div className="flex items-center gap-2.5">
+          {canSign && !isSigned && (
+            <button className="btn-primary" onClick={() => setSignOpen(true)}><PenLine size={16} /> Sign document</button>
+          )}
+          {isSigned ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-700">
+              <ShieldCheck size={16} /> Signed{data.signed_at ? ` · ${new Date(data.signed_at).toLocaleString()}` : ""}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1.5 text-sm font-semibold text-amber-700">Pending review</span>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-5 lg:h-[calc(100vh-12rem)] lg:grid-cols-2 lg:items-stretch">
@@ -139,13 +146,8 @@ export default function ReviewDetail() {
             <span className="flex items-center gap-2 text-sm font-semibold"><FileText size={15} /> {isSigned ? "Signed PDF" : "Rationale PDF"}</span>
             <div className="flex items-center gap-2">
               <button className="btn-ghost px-2.5 py-1 text-xs" onClick={download}><Download size={13} /> Download</button>
-              {canSign && (
-                <>
-                  <input ref={fileRef} type="file" accept="application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) sign.mutate(f); e.target.value = ""; }} />
-                  <button className="btn-primary px-2.5 py-1 text-xs" disabled={sign.isPending} onClick={() => fileRef.current?.click()}>
-                    {sign.isPending ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} {isSigned ? "Replace signed" : "Upload signed"}
-                  </button>
-                </>
+              {canSign && !isSigned && (
+                <button className="btn-primary px-2.5 py-1 text-xs" onClick={() => setSignOpen(true)}><PenLine size={13} /> Sign document</button>
               )}
             </div>
           </div>
@@ -158,6 +160,8 @@ export default function ReviewDetail() {
           )}
         </div>
       </div>
+
+      <SignPanel open={signOpen} onClose={() => setSignOpen(false)} jobId={jobId} title={data.title} mode="sign" onSigned={onSigned} />
     </div>
   );
 }

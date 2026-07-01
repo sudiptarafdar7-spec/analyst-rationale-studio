@@ -2,11 +2,14 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CalendarClock, Eye, FileDown, Loader2, Search, ShieldCheck, Trash2, X,
+  CalendarClock, Eye, FileDown, Loader2, PenLine, Search, ShieldCheck, Trash2, X,
 } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import { toast } from "../store/toast";
 import { useAuthStore } from "../store/auth";
+import { hasPerm } from "../lib/perms";
+import Modal from "../components/Modal";
+import SignPanel from "../components/SignPanel";
 
 interface AnalystRef { id: string; name: string }
 interface Job {
@@ -22,7 +25,11 @@ function fmt(d: string | null) { return d ? new Date(d).toLocaleDateString(undef
 export default function SignedRationale() {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const isReviewer = useAuthStore((s) => s.user?.role === "reviewer");
+  const me = useAuthStore((s) => s.user);
+  const isReviewer = me?.role === "reviewer";
+  const canSign = hasPerm(me, "review:sign");
+  const [resignConfirm, setResignConfirm] = useState<Job | null>(null);
+  const [resignJob, setResignJob] = useState<Job | null>(null);
   const [f, setF] = useState({ platform_type: "", channel_id: "", analyst_id: "", year: "", month: "", day: "", q: "" });
 
   const qs = useMemo(() => {
@@ -124,6 +131,9 @@ export default function SignedRationale() {
               <div className="flex shrink-0 items-center gap-1">
                 <button title="Open" onClick={() => navigate(`/review/${j.id}`)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-white hover:text-brand"><Eye size={15} /></button>
                 <button title="Download signed PDF" onClick={() => download(j)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-white hover:text-brand"><FileDown size={15} /></button>
+                {canSign && (
+                  <button title="Re-sign document" onClick={() => setResignConfirm(j)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-white hover:text-brand"><PenLine size={15} /></button>
+                )}
                 {isReviewer && (
                   <button title="Delete (reviewer only)" disabled={del.isPending} onClick={() => { if (confirm("Delete this signed rationale?")) del.mutate(j.id); }} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-white hover:text-danger"><Trash2 size={15} /></button>
                 )}
@@ -131,6 +141,21 @@ export default function SignedRationale() {
             </div>
           ))}
         </div>
+      )}
+
+      <Modal open={!!resignConfirm} onClose={() => setResignConfirm(null)} title="Re-sign this document?"
+        description="You'll upload a new signed PDF that replaces the current signed copy in the archive.">
+        <div className="flex justify-end gap-2">
+          <button className="btn-ghost" onClick={() => setResignConfirm(null)}>Cancel</button>
+          <button className="btn-primary" onClick={() => { setResignJob(resignConfirm); setResignConfirm(null); }}>
+            <PenLine size={16} /> Continue to re-sign
+          </button>
+        </div>
+      </Modal>
+
+      {resignJob && (
+        <SignPanel open onClose={() => setResignJob(null)} jobId={resignJob.id} title={resignJob.title}
+          mode="resign" onSigned={() => { qc.invalidateQueries({ queryKey: ["signed"] }); setResignJob(null); }} />
       )}
     </div>
   );
