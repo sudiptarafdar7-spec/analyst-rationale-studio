@@ -164,13 +164,13 @@ export default function ReviewDetail() {
         </div>
       </div>
 
-      <div className="grid gap-5 lg:h-[calc(100vh-12rem)] lg:grid-cols-2 lg:items-stretch">
+      <div className="grid gap-5 lg:h-[calc(100vh-9rem)] lg:grid-cols-2 lg:items-stretch">
         {/* Left: video + extract */}
         <div className="flex min-h-0 flex-col gap-5">
           <div className="card shrink-0 overflow-hidden p-0">
             <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5 text-sm font-semibold"><Video size={15} /> Source video</div>
             {embed ? (
-              <div className="h-48 w-full bg-black sm:h-56"><iframe title="video" src={embed} className="h-full w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /></div>
+              <div className="aspect-video w-full bg-black"><iframe title="video" src={embed} className="h-full w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /></div>
             ) : data.youtube_url ? (
               <div className="p-4 text-sm"><a className="text-brand underline" href={data.youtube_url} target="_blank" rel="noreferrer">Open video</a></div>
             ) : <div className="p-6 text-center text-sm text-slate-400">No video URL on this job.</div>}
@@ -204,7 +204,9 @@ export default function ReviewDetail() {
         </div>
       </div>
 
-      <SignPanel open={signOpen} onClose={() => setSignOpen(false)} jobId={jobId} title={data.title} mode="sign" onSigned={onSigned} />
+      <SignPanel open={signOpen} onClose={() => setSignOpen(false)} jobId={jobId} title={data.title}
+        platformType={data.platform_type} platformName={data.platform_name} platformLogo={data.platform_logo}
+        videoDate={data.video_date} videoTime={data.video_time} mode="sign" onSigned={onSigned} />
     </div>
   );
 }

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  CheckCircle2, Cloud, Download, FileCheck2, FileText, Loader2, PenLine,
-  ShieldCheck, Sparkles, Upload, Usb, X,
+  CalendarClock, CheckCircle2, Cloud, Download, Facebook, FileCheck2, FileText, Globe,
+  Instagram, Loader2, MessageCircle, Send, ShieldCheck, Sparkles, Upload, Usb, X, Youtube,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import { toast } from "../store/toast";
 
@@ -14,11 +15,35 @@ interface SignPanelProps {
   onClose: () => void;
   jobId: string;
   title?: string | null;
+  platformType?: string | null;
+  platformName?: string | null;
+  platformLogo?: string | null;
+  videoDate?: string | null;
+  videoTime?: string | null;
   mode?: "sign" | "resign";
   onSigned?: () => void;
 }
 
-export default function SignPanel({ open, onClose, jobId, title, mode = "sign", onSigned }: SignPanelProps) {
+const PMETA: Record<string, { label: string; icon: LucideIcon; color: string }> = {
+  youtube: { label: "YouTube", icon: Youtube, color: "text-red-600 bg-red-50" },
+  facebook: { label: "Facebook", icon: Facebook, color: "text-blue-600 bg-blue-50" },
+  instagram: { label: "Instagram", icon: Instagram, color: "text-pink-600 bg-pink-50" },
+  telegram: { label: "Telegram", icon: Send, color: "text-sky-600 bg-sky-50" },
+  whatsapp: { label: "WhatsApp", icon: MessageCircle, color: "text-emerald-600 bg-emerald-50" },
+  other: { label: "Other", icon: Globe, color: "text-slate-600 bg-slate-100" },
+};
+
+function fmtDateTime(d?: string | null, t?: string | null): string {
+  if (!d) return "Date not set";
+  const date = new Date(`${d}T${t ?? "00:00:00"}`);
+  if (Number.isNaN(date.getTime())) return `${d}${t ? " " + t : ""}`;
+  return date.toLocaleString(undefined, {
+    day: "2-digit", month: "short", year: "numeric",
+    ...(t ? { hour: "2-digit", minute: "2-digit" } : {}),
+  });
+}
+
+export default function SignPanel({ open, onClose, jobId, title, platformType, platformName, platformLogo, videoDate, videoTime, mode = "sign", onSigned }: SignPanelProps) {
   const [method, setMethod] = useState<Method>("manual");
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -124,13 +149,20 @@ export default function SignPanel({ open, onClose, jobId, title, mode = "sign", 
             <div className="relative shrink-0 border-b border-slate-100">
               <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-brand via-violet-500 to-emerald-400" />
               <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-                <div className="flex items-center gap-3">
-                  <span className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-brand-50 to-violet-100 text-brand-700 ring-1 ring-brand-100">
-                    <PenLine size={20} />
-                  </span>
-                  <div>
-                    <h2 className="text-lg font-bold tracking-tight text-slate-800">{heading}</h2>
-                    <p className="text-xs text-slate-500">{title || "Rationale"} · sign and archive to Signed Rationale</p>
+                <div className="flex min-w-0 items-center gap-3">
+                  {(() => { const m = PMETA[platformType ?? "other"] ?? PMETA.other; const PIcon = m.icon;
+                    return <span title={m.label} className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${m.color}`}><PIcon size={19} /></span>; })()}
+                  {platformLogo ? (
+                    <img src={platformLogo} alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover ring-1 ring-slate-200" />
+                  ) : (
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-sm font-semibold text-slate-500">{(platformName ?? "?")[0]?.toUpperCase()}</span>
+                  )}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h2 className="truncate text-base font-bold tracking-tight text-slate-800">{platformName ?? "Rationale"}</h2>
+                      <span className="shrink-0 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700">{heading}</span>
+                    </div>
+                    <p className="flex items-center gap-1 text-xs text-slate-500"><CalendarClock size={12} /> {fmtDateTime(videoDate, videoTime)}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">

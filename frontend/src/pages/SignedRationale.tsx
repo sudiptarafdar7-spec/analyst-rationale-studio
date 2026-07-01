@@ -15,6 +15,7 @@ interface AnalystRef { id: string; name: string }
 interface Job {
   id: string; title: string | null; platform_name: string | null; platform_logo: string | null;
   analysts: AnalystRef[]; video_date: string | null; signed_at: string | null;
+  platform_type?: string | null; video_time?: string | null;
 }
 interface Facets { platforms: { value: string; label: string }[]; channels: { id: string; name: string; platform_type: string }[]; analysts: { id: string; name: string }[]; years: number[]; dates: string[] }
 interface ListOut { items: Job[]; total: number; facets: Facets }
@@ -155,6 +156,8 @@ export default function SignedRationale() {
 
       {resignJob && (
         <SignPanel open onClose={() => setResignJob(null)} jobId={resignJob.id} title={resignJob.title}
+          platformType={resignJob.platform_type} platformName={resignJob.platform_name} platformLogo={resignJob.platform_logo}
+          videoDate={resignJob.video_date} videoTime={resignJob.video_time}
           mode="resign" onSigned={() => { qc.invalidateQueries({ queryKey: ["signed"] }); setResignJob(null); }} />
       )}
     </div>
