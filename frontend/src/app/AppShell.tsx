@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import ErrorBoundary from "../components/ErrorBoundary";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, LogOut, UserCircle } from "lucide-react";
+import { ChevronDown, LogOut, PanelLeftClose, PanelLeftOpen, UserCircle } from "lucide-react";
 import { useAuthStore } from "../store/auth";
 import { toast } from "../store/toast";
 import Avatar from "../components/Avatar";
@@ -10,37 +10,46 @@ import NotificationBell from "../components/NotificationBell";
 import { BRAND_ICON, NAV_GROUPS } from "./nav";
 import { hasPerm } from "../lib/perms";
 
-function Sidebar() {
+const COLLAPSE_KEY = "ars.sidebarCollapsed";
+
+function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const user = useAuthStore((s) => s.user);
   const groups = NAV_GROUPS
     .map((g) => ({ ...g, items: g.items.filter((it) => hasPerm(user, it.perm)) }))
     .filter((g) => g.items.length > 0);
   return (
-    <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
-      <div className="flex h-16 items-center gap-2.5 border-b border-slate-200 px-5">
-        <span className="grid h-9 w-9 place-items-center rounded-xl bg-brand text-white">
+    <aside className={`hidden shrink-0 flex-col border-r border-slate-200 bg-white transition-[width] duration-200 lg:flex ${collapsed ? "w-16" : "w-64"}`}>
+      <div className={`flex h-16 items-center border-b border-slate-200 ${collapsed ? "justify-center" : "gap-2.5 px-5"}`}>
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-brand text-white">
           <BRAND_ICON size={18} />
         </span>
-        <div className="leading-tight">
-          <div className="text-sm font-semibold">Rationale Studio</div>
-          <div className="text-[11px] text-slate-400">SEBI compliance</div>
-        </div>
+        {!collapsed && (
+          <div className="leading-tight">
+            <div className="text-sm font-semibold">Rationale Studio</div>
+            <div className="text-[11px] text-slate-400">SEBI compliance</div>
+          </div>
+        )}
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-4">
-        {groups.map((group) => (
-          <div key={group.heading} className="mb-5">
-            <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              {group.heading}
-            </div>
+        {groups.map((group, gi) => (
+          <div key={group.heading} className={collapsed ? (gi === 0 ? "mb-2" : "mb-2 border-t border-slate-100 pt-2") : "mb-5"}>
+            {!collapsed && (
+              <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                {group.heading}
+              </div>
+            )}
             <div className="space-y-0.5">
               {group.items.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
                   end={item.to === "/"}
+                  title={collapsed ? item.label : undefined}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition ${
+                    `group relative flex items-center rounded-xl text-sm font-medium transition ${
+                      collapsed ? "justify-center px-0 py-2.5" : "gap-3 px-3 py-2"
+                    } ${
                       isActive
                         ? "bg-brand-50 text-brand-700"
                         : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -48,13 +57,26 @@ function Sidebar() {
                   }
                 >
                   <item.icon size={18} className="shrink-0" />
-                  <span className="truncate">{item.label}</span>
+                  {!collapsed && <span className="truncate">{item.label}</span>}
+                  {collapsed && (
+                    <span className="pointer-events-none absolute left-full ml-2 z-50 hidden whitespace-nowrap rounded-md bg-slate-800 px-2 py-1 text-xs font-medium text-white shadow-lg group-hover:block">
+                      {item.label}
+                    </span>
+                  )}
                 </NavLink>
               ))}
             </div>
           </div>
         ))}
       </nav>
+
+      <button
+        onClick={onToggle}
+        title={collapsed ? "Expand menu" : "Collapse menu"}
+        className={`m-3 flex items-center rounded-xl py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 ${collapsed ? "justify-center px-0" : "gap-2 px-3"}`}
+      >
+        {collapsed ? <PanelLeftOpen size={18} /> : <><PanelLeftClose size={18} /> Collapse</>}
+      </button>
     </aside>
   );
 }
@@ -121,14 +143,16 @@ function UserMenu() {
 }
 
 export default function AppShell() {
-  const { pathname } = useLocation();
-  // The review-detail screen (/review/:id) needs the full width (side-by-side
-  // video/extract + PDF).
-  const segs = pathname.split("/").filter(Boolean);
-  const wide = segs[0] === "review" && segs.length === 2;
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(COLLAPSE_KEY) === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(COLLAPSE_KEY, collapsed ? "1" : "0"); } catch { /* ignore */ }
+  }, [collapsed]);
+
   return (
     <div className="flex h-full">
-      <Sidebar />
+      <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white/80 px-5 backdrop-blur">
           <div className="text-sm font-medium text-slate-400">Analyst Rationale Studio</div>
@@ -138,7 +162,7 @@ export default function AppShell() {
           </div>
         </header>
         <main className="flex-1 overflow-y-auto">
-          <div className={"mx-auto px-5 py-8 " + (wide ? "max-w-[1700px]" : "max-w-6xl")}>
+          <div className={`mx-auto px-5 py-8 transition-[max-width] duration-200 ${collapsed ? "max-w-[88rem]" : "max-w-6xl"}`}>
             <ErrorBoundary>
               <Outlet />
             </ErrorBoundary>

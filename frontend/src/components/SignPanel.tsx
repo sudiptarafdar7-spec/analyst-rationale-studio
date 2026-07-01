@@ -170,8 +170,8 @@ export default function SignPanel({ open, onClose, jobId, title, mode = "sign", 
                     <Usb size={12} className="mb-0.5 mr-1 inline" />
                     Download it, sign in <strong>Adobe Acrobat</strong> with your DSC pendrive token, then upload the signed PDF on the right.
                   </div>
-                  <div className="min-h-0 flex-1 bg-slate-50">
-                    {sourceUrl ? <iframe title="unsigned" src={sourceUrl} className="h-full w-full" />
+                  <div className="min-h-0 flex-1 bg-slate-50 p-4">
+                    {sourceUrl ? <iframe title="unsigned" src={sourceUrl} className="h-full w-full rounded-lg bg-white ring-1 ring-slate-200" />
                       : <div className="grid h-full place-items-center text-sm text-slate-400"><Loader2 className="animate-spin" /></div>}
                   </div>
                 </div>
@@ -202,8 +202,8 @@ export default function SignPanel({ open, onClose, jobId, title, mode = "sign", 
                     </div>
                   ) : (
                     <>
-                      <div className="min-h-0 flex-1 bg-slate-50">
-                        {uploadUrl ? <iframe title="signed" src={uploadUrl} className="h-full w-full" />
+                      <div className="min-h-0 flex-1 bg-slate-50 p-4">
+                        {uploadUrl ? <iframe title="signed" src={uploadUrl} className="h-full w-full rounded-lg bg-white ring-1 ring-slate-200" />
                           : <div className="grid h-full place-items-center text-sm text-slate-400"><Loader2 className="animate-spin" /></div>}
                       </div>
                       <div className="shrink-0 space-y-2 border-t border-slate-100 px-5 py-3">

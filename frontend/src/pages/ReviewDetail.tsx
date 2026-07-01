@@ -122,7 +122,7 @@ export default function ReviewDetail() {
           <div className="card shrink-0 overflow-hidden p-0">
             <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5 text-sm font-semibold"><Video size={15} /> Source video</div>
             {embed ? (
-              <div className="aspect-video w-full bg-black"><iframe title="video" src={embed} className="h-full w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /></div>
+              <div className="h-48 w-full bg-black sm:h-56"><iframe title="video" src={embed} className="h-full w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /></div>
             ) : data.youtube_url ? (
               <div className="p-4 text-sm"><a className="text-brand underline" href={data.youtube_url} target="_blank" rel="noreferrer">Open video</a></div>
             ) : <div className="p-6 text-center text-sm text-slate-400">No video URL on this job.</div>}
@@ -144,12 +144,7 @@ export default function ReviewDetail() {
         <div className="card flex min-h-0 flex-col p-0">
           <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-2.5">
             <span className="flex items-center gap-2 text-sm font-semibold"><FileText size={15} /> {isSigned ? "Signed PDF" : "Rationale PDF"}</span>
-            <div className="flex items-center gap-2">
-              <button className="btn-ghost px-2.5 py-1 text-xs" onClick={download}><Download size={13} /> Download</button>
-              {canSign && !isSigned && (
-                <button className="btn-primary px-2.5 py-1 text-xs" onClick={() => setSignOpen(true)}><PenLine size={13} /> Sign document</button>
-              )}
-            </div>
+            <button className="btn-ghost px-2.5 py-1 text-xs" onClick={download}><Download size={13} /> Download</button>
           </div>
           {pdfUrl ? <iframe title="pdf" src={pdfUrl} className="min-h-[520px] w-full flex-1" />
             : <div className="grid min-h-[520px] flex-1 place-items-center"><Loader2 className="animate-spin text-slate-300" /></div>}
