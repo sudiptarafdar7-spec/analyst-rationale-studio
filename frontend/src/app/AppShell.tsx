@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import ErrorBoundary from "../components/ErrorBoundary";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, LogOut, UserCircle } from "lucide-react";
@@ -121,6 +121,11 @@ function UserMenu() {
 }
 
 export default function AppShell() {
+  const { pathname } = useLocation();
+  // The review-detail screen (/review/:id) needs the full width (side-by-side
+  // video/extract + PDF).
+  const segs = pathname.split("/").filter(Boolean);
+  const wide = segs[0] === "review" && segs.length === 2;
   return (
     <div className="flex h-full">
       <Sidebar />
@@ -133,7 +138,7 @@ export default function AppShell() {
           </div>
         </header>
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-6xl px-5 py-8">
+          <div className={"mx-auto px-5 py-8 " + (wide ? "max-w-[1700px]" : "max-w-6xl")}>
             <ErrorBoundary>
               <Outlet />
             </ErrorBoundary>

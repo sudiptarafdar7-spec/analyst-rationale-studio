@@ -16,8 +16,15 @@ interface JobDetail {
 
 function embedUrl(url: string | null): string | null {
   if (!url) return null;
-  const m = url.match(/(?:youtu\.be\/|v=|\/embed\/|\/shorts\/)([\w-]{11})/);
-  return m ? `https://www.youtube.com/embed/${m[1]}` : null;
+  // Support every YouTube URL shape: watch?v=, youtu.be/, /embed/, /shorts/,
+  // and live streams (/live/ or watch?v= while live). Falls back to null for
+  // non-YouTube links so the page shows an "Open video" button instead.
+  const yt = url.match(/(?:youtu\.be\/|[?&]v=|\/embed\/|\/shorts\/|\/live\/)([\w-]{11})/);
+  if (yt) return `https://www.youtube.com/embed/${yt[1]}`;
+  // Bare 11-char id fallback (e.g. someone pasted just the id).
+  const bare = url.match(/^[\w-]{11}$/);
+  if (bare) return `https://www.youtube.com/embed/${bare[0]}`;
+  return null;
 }
 
 export default function ReviewDetail() {
@@ -37,8 +44,20 @@ export default function ReviewDetail() {
 
   useEffect(() => {
     let cancelled = false;
-    api.getBlob(`/jobs/${jobId}/artifact?key=extracted`).then((b) => b.text())
-      .then((t) => { if (!cancelled) setExtract(t.slice(0, 40000)); }).catch(() => setExtract(""));
+    // Show the reviewer-EDITED extract (bulk-input-english.txt, saved at the
+    // step-4 review gate). Fall back to the raw AI extract if edits were never
+    // saved on this job.
+    const load = async () => {
+      for (const key of ["bulk_input_english", "extracted"]) {
+        try {
+          const b = await api.getBlob(`/jobs/${jobId}/artifact?key=${key}`);
+          const t = (await b.text()).trim();
+          if (t) { if (!cancelled) setExtract(t.slice(0, 60000)); return; }
+        } catch { /* try next key */ }
+      }
+      if (!cancelled) setExtract("");
+    };
+    void load();
     return () => { cancelled = true; };
   }, [jobId]);
 
@@ -90,30 +109,33 @@ export default function ReviewDetail() {
         )}
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-5 lg:h-[calc(100vh-12rem)] lg:grid-cols-2 lg:items-stretch">
         {/* Left: video + extract */}
-        <div className="space-y-5">
-          <div className="card overflow-hidden p-0">
+        <div className="flex min-h-0 flex-col gap-5">
+          <div className="card shrink-0 overflow-hidden p-0">
             <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5 text-sm font-semibold"><Video size={15} /> Source video</div>
             {embed ? (
-              <div className="aspect-video w-full bg-black"><iframe title="video" src={embed} className="h-full w-full" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /></div>
+              <div className="aspect-video w-full bg-black"><iframe title="video" src={embed} className="h-full w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen /></div>
             ) : data.youtube_url ? (
               <div className="p-4 text-sm"><a className="text-brand underline" href={data.youtube_url} target="_blank" rel="noreferrer">Open video</a></div>
             ) : <div className="p-6 text-center text-sm text-slate-400">No video URL on this job.</div>}
           </div>
 
-          <div className="card p-0">
-            <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5 text-sm font-semibold"><FileText size={15} /> Output — Extract analysis</div>
-            <div className="max-h-[420px] overflow-auto px-4 py-3">
-              {extract ? <pre className="whitespace-pre-wrap break-words font-mono text-xs text-slate-700">{extract}</pre>
+          <div className="card flex min-h-0 flex-1 flex-col p-0">
+            <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 px-4 py-2.5 text-sm font-semibold">
+              <FileText size={15} /> Output — Extract analysis
+              <span className="ml-1 rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-700">reviewed</span>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
+              {extract ? <pre className="whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed text-slate-700">{extract}</pre>
                 : <p className="text-sm text-slate-400">No extract output available.</p>}
             </div>
           </div>
         </div>
 
         {/* Right: pdf + actions */}
-        <div className="card flex flex-col p-0">
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
+        <div className="card flex min-h-0 flex-col p-0">
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-2.5">
             <span className="flex items-center gap-2 text-sm font-semibold"><FileText size={15} /> {isSigned ? "Signed PDF" : "Rationale PDF"}</span>
             <div className="flex items-center gap-2">
               <button className="btn-ghost px-2.5 py-1 text-xs" onClick={download}><Download size={13} /> Download</button>
@@ -127,10 +149,10 @@ export default function ReviewDetail() {
               )}
             </div>
           </div>
-          {pdfUrl ? <iframe title="pdf" src={pdfUrl} className="h-[640px] w-full" />
-            : <div className="grid h-[640px] place-items-center"><Loader2 className="animate-spin text-slate-300" /></div>}
+          {pdfUrl ? <iframe title="pdf" src={pdfUrl} className="min-h-[520px] w-full flex-1" />
+            : <div className="grid min-h-[520px] flex-1 place-items-center"><Loader2 className="animate-spin text-slate-300" /></div>}
           {isSigned && (
-            <div className="flex items-center gap-2 border-t border-slate-100 px-4 py-2.5 text-xs text-emerald-700">
+            <div className="flex shrink-0 items-center gap-2 border-t border-slate-100 px-4 py-2.5 text-xs text-emerald-700">
               <CheckCircle2 size={14} /> This rationale is signed and archived under Signed Rationale.
             </div>
           )}
