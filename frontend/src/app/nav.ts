@@ -52,7 +52,10 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Other Tools",
-    items: [{ label: "Generate Chart", to: "/generate-chart", icon: LineChart, perm: "chart:generate" }],
+    items: [
+      { label: "Generate Chart", to: "/generate-chart", icon: LineChart, perm: "chart:generate" },
+      { label: "API Access", to: "/api-access", icon: KeyRound, perm: "apikey:*" },
+    ],
   },
   {
     heading: "Stock Analysis",

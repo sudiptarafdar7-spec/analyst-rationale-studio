@@ -14,7 +14,7 @@ interface User {
   id: string; email: string; first_name: string; last_name: string; mobile: string | null;
   role: Role; permissions: string[]; is_active: boolean; last_login_at: string | null; created_at: string;
 }
-interface PermDef { key: string; label: string; group: "employee" | "admin" }
+interface PermDef { key: string; label: string; group: "employee" | "admin" | "apikeys" | "review" }
 
 interface FormState {
   id?: string; first_name: string; last_name: string; email: string; mobile: string;
@@ -40,6 +40,8 @@ export default function UserManagement() {
 
   const empPerms = (catalog.data ?? []).filter((p) => p.group === "employee");
   const adminPerms = (catalog.data ?? []).filter((p) => p.group === "admin");
+  const apikeyPerms = (catalog.data ?? []).filter((p) => p.group === "apikeys");
+  const reviewPerms = (catalog.data ?? []).filter((p) => p.group === "review");
 
   const openCreate = () => { setForm(EMPTY); setOpen(true); };
   const openEdit = (u: User) => {
@@ -179,6 +181,8 @@ export default function UserManagement() {
             {!all && (
               <div className="max-h-64 space-y-3 overflow-auto p-3">
                 <PermGroup title="Actions" perms={empPerms} selected={form.perms} onToggle={togglePerm} />
+                {reviewPerms.length > 0 && <PermGroup title="Review" perms={reviewPerms} selected={form.perms} onToggle={togglePerm} />}
+                {apikeyPerms.length > 0 && <PermGroup title="API key access (replace only — no view)" perms={apikeyPerms} selected={form.perms} onToggle={togglePerm} />}
                 {form.role === "admin" && <PermGroup title="Admin areas" perms={adminPerms} selected={form.perms} onToggle={togglePerm} />}
               </div>
             )}

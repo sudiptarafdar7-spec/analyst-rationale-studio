@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from api.ai_models import router as ai_models_router
 from api.analysts import router as analysts_router
 from api.api_keys import router as api_keys_router
+from api.apikeys_self import router as apikeys_self_router
 from api.auth import router as auth_router
 from api.files import router as files_router
 from api.health import router as health_router
@@ -151,6 +152,7 @@ app.include_router(health_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(api_keys_router, prefix="/api")
+app.include_router(apikeys_self_router, prefix="/api")
 app.include_router(platforms_router, prefix="/api")
 app.include_router(analysts_router, prefix="/api")
 app.include_router(files_router, prefix="/api")

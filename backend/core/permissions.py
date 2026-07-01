@@ -28,6 +28,13 @@ PERMISSIONS: list[dict] = [
     {"key": "watchlist:delete", "label": "Remove from watchlist", "group": "employee"},
     {"key": "jobs:view_all", "label": "See other users' jobs & entries", "group": "employee"},
     {"key": "review:sign", "label": "Sign rationales (upload signed PDF)", "group": "review"},
+    # per-provider API-key access (replace / remove only — NEVER reveals the key)
+    {"key": "apikey:openai:edit", "label": "Update OpenAI API key (replace only, no view)", "group": "apikeys"},
+    {"key": "apikey:anthropic:edit", "label": "Update Anthropic API key (replace only, no view)", "group": "apikeys"},
+    {"key": "apikey:gemini:edit", "label": "Update Gemini API key (replace only, no view)", "group": "apikeys"},
+    {"key": "apikey:deepgram:edit", "label": "Update Deepgram API key (replace only, no view)", "group": "apikeys"},
+    {"key": "apikey:youtube:edit", "label": "Update YouTube API key (replace only, no view)", "group": "apikeys"},
+    {"key": "apikey:dhan:edit", "label": "Update Dhan API key (replace only, no view)", "group": "apikeys"},
     # admin areas
     {"key": "admin:users", "label": "User management", "group": "admin"},
     {"key": "admin:platforms", "label": "Manage Platform", "group": "admin"},

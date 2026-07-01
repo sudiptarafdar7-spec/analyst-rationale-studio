@@ -14,6 +14,7 @@ import PendingReview from "./pages/PendingReview";
 import ReviewDetail from "./pages/ReviewDetail";
 import SignedRationale from "./pages/SignedRationale";
 import GenerateChart from "./pages/GenerateChart";
+import ApiAccess from "./pages/ApiAccess";
 import ManageApiKeys from "./pages/admin/ManageApiKeys";
 import ManagePlatform from "./pages/admin/ManagePlatform";
 import AnalystsProfile from "./pages/admin/AnalystsProfile";
@@ -49,6 +50,7 @@ export default function App() {
           <Route path="/ai-rationale" element={<AiRationale />} />
           <Route path="/ai-rationale/:jobId" element={<WorkPage />} />
           <Route path="/generate-chart" element={<GenerateChart />} />
+          <Route path="/api-access" element={<RequirePerm perm="apikey:*"><ApiAccess /></RequirePerm>} />
           <Route path="/review" element={<PendingReview />} />
           <Route path="/review/:jobId" element={<ReviewDetail />} />
           <Route path="/signed" element={<SignedRationale />} />
