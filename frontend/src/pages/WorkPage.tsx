@@ -260,7 +260,7 @@ export default function WorkPage() {
           )}
 
           {/* Artifact preview for the active step (hidden when the re-edit panel shows). */}
-          {!reeditStep && <ArtifactPreview jobId={jobId} step={activeStep} stepStatus={stepMap.get(activeStep)?.status ?? "pending"} />}
+          {!reeditStep && <ArtifactPreview jobId={jobId} step={activeStep} stepStatus={stepMap.get(activeStep)?.status ?? "pending"} signed={data.status === "signed"} />}
         </div>
       </div>
 
@@ -298,7 +298,7 @@ function StepIcon({ status, n }: { status: StepStatus; n: number }) {
   return <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-semibold text-slate-400">{n}</span>;
 }
 
-function ArtifactPreview({ jobId, step, stepStatus }: { jobId: string; step: number; stepStatus: StepStatus }) {
+function ArtifactPreview({ jobId, step, stepStatus, signed = false }: { jobId: string; step: number; stepStatus: StepStatus; signed?: boolean }) {
   const isPdf = step === 10;
   const key = ARTIFACT_KEY[step];
   const [open, setOpen] = useState(false);
@@ -320,20 +320,20 @@ function ArtifactPreview({ jobId, step, stepStatus }: { jobId: string; step: num
     if (isPdf) {
       if (pdfUrl) return;
       setState("loading");
-      api.getBlob(`/jobs/${jobId}/pdf`).then((b) => { setPdfUrl(URL.createObjectURL(b)); setState("idle"); }).catch(() => setState("empty"));
+      api.getBlob(signed ? `/review/${jobId}/signed-pdf` : `/jobs/${jobId}/pdf`).then((b) => { setPdfUrl(URL.createObjectURL(b)); setState("idle"); }).catch(() => setState("empty"));
       return;
     }
     if (!key || text !== null) return;
     setState("loading");
     api.getBlob(`/jobs/${jobId}/artifact?key=${key}`).then((b) => b.text())
       .then((t) => { setText(t.slice(0, 20000)); setState("idle"); }).catch(() => setState("empty"));
-  }, [open, isPdf, key, stepStatus, jobId, text, pdfUrl]);
+  }, [open, isPdf, key, stepStatus, jobId, text, pdfUrl, signed]);
 
   const available = stepStatus === "done" && (isPdf || !!key);
   return (
     <div className="card overflow-hidden">
       <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
-        <h3 className="text-sm font-semibold">{isPdf ? "Final PDF" : "Output"} — {STEP_LABELS[step]}</h3>
+        <h3 className="text-sm font-semibold">{isPdf ? (signed ? "Signed PDF" : "Final PDF") : "Output"} — {STEP_LABELS[step]}</h3>
         {available ? (
           <button className="btn-ghost px-2.5 py-1 text-xs" onClick={() => setOpen((o) => !o)}>
             {open ? <><EyeOff size={13} /> Hide</> : <><Eye size={13} /> View</>}

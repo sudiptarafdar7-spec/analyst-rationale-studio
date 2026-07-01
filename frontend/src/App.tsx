@@ -54,6 +54,7 @@ export default function App() {
           <Route path="/review" element={<PendingReview />} />
           <Route path="/review/:jobId" element={<ReviewDetail />} />
           <Route path="/signed" element={<SignedRationale />} />
+          <Route path="/signed/:jobId" element={<ReviewDetail />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/activity" element={<MyActivity />} />
 

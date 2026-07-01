@@ -130,7 +130,7 @@ export default function SignedRationale() {
               </div>
               <div className="hidden items-center gap-1 text-xs text-slate-500 sm:flex"><CalendarClock size={12} /> signed {fmt(j.signed_at)}</div>
               <div className="flex shrink-0 items-center gap-1">
-                <button title="Open" onClick={() => navigate(`/review/${j.id}`)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-white hover:text-brand"><Eye size={15} /></button>
+                <button title="Open" onClick={() => navigate(`/signed/${j.id}`)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-white hover:text-brand"><Eye size={15} /></button>
                 <button title="Download signed PDF" onClick={() => download(j)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-white hover:text-brand"><FileDown size={15} /></button>
                 {canSign && (
                   <button title="Re-sign document" onClick={() => setResignConfirm(j)} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-white hover:text-brand"><PenLine size={15} /></button>
