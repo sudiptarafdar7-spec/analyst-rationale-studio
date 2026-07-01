@@ -42,12 +42,14 @@ function fmtDateTime(d: string | null, t: string | null): string {
 
 function embedUrl(url: string | null): string | null {
   if (!url) return null;
-  // Support every YouTube URL shape: watch?v=, youtu.be/, /embed/, /shorts/,
-  // and live streams (/live/ or watch?v= while live). Falls back to null for
-  // non-YouTube links so the page shows an "Open video" button instead.
+  // YouTube: watch?v=, youtu.be/, /embed/, /shorts/, and live (/live/ or ?v=).
   const yt = url.match(/(?:youtu\.be\/|[?&]v=|\/embed\/|\/shorts\/|\/live\/)([\w-]{11})/);
   if (yt) return `https://www.youtube.com/embed/${yt[1]}`;
-  // Bare 11-char id fallback (e.g. someone pasted just the id).
+  // Facebook (posts, /videos/, /watch, /reel, fb.watch) via the video plugin.
+  if (/(?:facebook\.com|fb\.watch)\//i.test(url)) {
+    return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false`;
+  }
+  // Bare 11-char id fallback (someone pasted just a YouTube id).
   const bare = url.match(/^[\w-]{11}$/);
   if (bare) return `https://www.youtube.com/embed/${bare[0]}`;
   return null;
