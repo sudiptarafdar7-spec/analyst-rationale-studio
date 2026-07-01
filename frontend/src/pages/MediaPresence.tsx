@@ -124,7 +124,7 @@ function summarizeFilter(f: Filters, plats: Platform[], ans: Analyst[]): string 
 }
 async function downloadJobPdf(job: Job): Promise<void> {
   try {
-    const blob = await api.getBlob(`/jobs/${job.id}/pdf`);
+    const blob = await api.getBlob(job.status === "signed" ? `/review/${job.id}/signed-pdf` : `/jobs/${job.id}/pdf`);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -572,9 +572,15 @@ export default function MediaPresence() {
                       <button onClick={() => navigate(`/admin/watchlist?job=${j.id}`)} title="View this job's calls in the watchlist" className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Eye size={16} /></button>
                     )}
                   </div>
-                  <button onClick={() => openEdit(j)} title="Edit" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Pencil size={15} /></button>
-                  <button onClick={() => restart.mutate(j.id)} disabled={restart.isPending} title="Reload pipeline" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand disabled:opacity-40"><RotateCcw size={15} /></button>
-                  <button onClick={() => setConfirmDel(j)} title="Delete" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-danger"><Trash2 size={15} /></button>
+                  {j.status === "signed" ? (
+                    <span className="w-[104px] shrink-0 text-right text-[11px] font-medium text-emerald-600">Locked</span>
+                  ) : (
+                    <>
+                      <button onClick={() => openEdit(j)} title="Edit" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand"><Pencil size={15} /></button>
+                      <button onClick={() => restart.mutate(j.id)} disabled={restart.isPending} title="Reload pipeline" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-brand disabled:opacity-40"><RotateCcw size={15} /></button>
+                      <button onClick={() => setConfirmDel(j)} title="Delete" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-danger"><Trash2 size={15} /></button>
+                    </>
+                  )}
                 </div>
               </div>
             );

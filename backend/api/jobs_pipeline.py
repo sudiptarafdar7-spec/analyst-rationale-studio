@@ -82,6 +82,8 @@ def start_job(
     user: User = Depends(require_perm("rationale:run")),
 ) -> dict:
     job = _load_owned(job_id, db, user)
+    if job.status == JobStatus.signed:
+        raise HTTPException(status_code=409, detail="This rationale is signed and locked.")
     if job.status in (JobStatus.running, JobStatus.paused_review):
         raise HTTPException(status_code=409, detail="Job is already in progress.")
     job.status = JobStatus.running
@@ -99,7 +101,9 @@ def restart_job(
     db: Session = Depends(get_db),
     user: User = Depends(require_perm("rationale:run")),
 ) -> dict:
-    _load_owned(job_id, db, user)
+    job = _load_owned(job_id, db, user)
+    if job.status == JobStatus.signed:
+        raise HTTPException(status_code=409, detail="This rationale is signed and locked — it can't be restarted.")
     bg.add_task(pipeline.restart, job_id)
     return {"status": "running", "message": "Pipeline restarting from step 1."}
 
@@ -126,7 +130,9 @@ def retry_step(
     db: Session = Depends(get_db),
     user: User = Depends(require_perm("rationale:run")),
 ) -> dict:
-    _load_owned(job_id, db, user)
+    job = _load_owned(job_id, db, user)
+    if job.status == JobStatus.signed:
+        raise HTTPException(status_code=409, detail="This rationale is signed and locked — steps can't be re-run.")
     if not (1 <= body.step_no <= 10):
         raise HTTPException(status_code=422, detail="step_no must be between 1 and 10")
     bg.add_task(pipeline.retry_step, job_id, body.step_no)

@@ -196,9 +196,11 @@ export default function WorkPage() {
               <TrendingUp size={16} /> Watchlist
             </Link>
           )}
-          <button className="btn-ghost" disabled={busy} onClick={() => act(`/jobs/${jobId}/restart`, undefined, "Restarting from step 1")}>
-            <RotateCcw size={16} /> Restart
-          </button>
+          {data.status !== "signed" && (
+            <button className="btn-ghost" disabled={busy} onClick={() => act(`/jobs/${jobId}/restart`, undefined, "Restarting from step 1")}>
+              <RotateCcw size={16} /> Restart
+            </button>
+          )}
         </div>
       </div>
 
@@ -220,10 +222,12 @@ export default function WorkPage() {
                     <span className={`flex-1 truncate ${st === "done" ? "text-slate-700" : st === "running" ? "font-medium text-blue-700" : "text-slate-500"}`}>{STEP_LABELS[n]}</span>
                     {gateStep === n && data.status === "paused_review" && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">REVIEW</span>}
                   </button>
-                  <button onClick={() => setRetryStep(n)} title={`Restart from step ${n}`}
-                    className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-slate-300 opacity-0 transition hover:bg-slate-100 hover:text-brand focus:opacity-100 group-hover:opacity-100">
-                    <RotateCcw size={13} />
-                  </button>
+                  {data.status !== "signed" && (
+                    <button onClick={() => setRetryStep(n)} title={`Restart from step ${n}`}
+                      className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-slate-300 opacity-0 transition hover:bg-slate-100 hover:text-brand focus:opacity-100 group-hover:opacity-100">
+                      <RotateCcw size={13} />
+                    </button>
+                  )}
                 </li>
               );
             })}
@@ -712,7 +716,7 @@ function CompletionPanel({ job, saved, signed, onSaved, onDeleted }: { job: JobD
           <a className="btn-ghost" href={pdfUrl ?? undefined} download={pdfUrl ? `${job.title || "rationale"}${signed ? "-signed" : ""}.pdf` : undefined}><Download size={16} /> Download</a>
           {!saved && !signed && <button className="btn-primary" disabled={busy} onClick={send}><Send size={16} /> Send to reviewer</button>}
           {(saved || signed) && <Link className="btn-ghost" to={`/review/${job.id}`}><TrendingUp size={16} /> Open review</Link>}
-          <button className="btn bg-danger text-white hover:bg-danger/90" disabled={busy} onClick={del}><Trash2 size={16} /> Delete</button>
+          {!signed && <button className="btn bg-danger text-white hover:bg-danger/90" disabled={busy} onClick={del}><Trash2 size={16} /> Delete</button>}
         </div>
       </div>
     </div>

@@ -273,6 +273,8 @@ def update_job(job_id: uuid.UUID, body: JobUpdateIn, db: Session = Depends(get_d
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     _ensure_access(job, user)
+    if job.status == JobStatus.signed:
+        raise HTTPException(status_code=409, detail="This rationale is signed and locked — it can't be edited.")
     if job.status in (JobStatus.running, JobStatus.paused_review):
         raise HTTPException(status_code=409, detail="Cannot edit a job while it is processing.")
 
